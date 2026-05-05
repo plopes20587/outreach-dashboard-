@@ -363,6 +363,44 @@ a:hover {
   margin-bottom: 10px;
 }
 
+/* Fit bullet groups */
+.fit-group {
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-left: 2px solid transparent;
+}
+.fit-group-strengths {
+  background: var(--green-bg);
+  border-left-color: var(--green-bd);
+}
+.fit-group-gaps {
+  background: var(--amber-bg);
+  border-left-color: var(--amber-bd);
+}
+.fit-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.fit-bullets {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+.fit-bullets li {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.fit-bullets li:last-child {
+  margin-bottom: 0;
+}
+
 /* Summary box */
 .summary-box {
   background: var(--bg-2);

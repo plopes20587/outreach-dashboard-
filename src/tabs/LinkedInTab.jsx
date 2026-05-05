@@ -277,10 +277,23 @@ export default function LinkedInTab() {
               {fit.industry} -- {fit.industry_fit}
             </Badge>
             <Badge variant="blue">{fit.role_level}</Badge>
-            {(fit.flags || []).map((flag) => (
-              <Badge key={flag} variant="neutral">{flag}</Badge>
-            ))}
           </div>
+          {(fit.strengths?.length > 0) && (
+            <div className="fit-group fit-group-strengths">
+              <div className="fit-group-label">Why it fits</div>
+              <ul className="fit-bullets">
+                {fit.strengths.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            </div>
+          )}
+          {(fit.gaps?.length > 0) && (
+            <div className="fit-group fit-group-gaps">
+              <div className="fit-group-label">Watch-outs</div>
+              <ul className="fit-bullets">
+                {fit.gaps.map((g, i) => <li key={i}>{g}</li>)}
+              </ul>
+            </div>
+          )}
           <div className="summary-box">{fit.summary}</div>
           <div className="divider" />
           <div className="grid-2" style={{ marginBottom: 10 }}>

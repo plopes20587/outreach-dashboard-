@@ -48,9 +48,9 @@ Job description:
 ${jd}
 
 Respond ONLY with valid JSON, no markdown:
-{"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","flags":["<flag>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
+{"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strengths":["<specific reason Pat is a strong match — cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch — be concrete, not generic>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
 
-For search_titles: 3 exact LinkedIn-searchable titles to target.`;
+For strengths and gaps: 2-4 bullets each, specific and evidence-based. For search_titles: 3 exact LinkedIn-searchable titles to target.`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
