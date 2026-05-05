@@ -86,7 +86,7 @@ export default async function handler(request) {
     if (!res.ok) {
       const detail = await res.text();
       console.error("Notion error:", detail);
-      return json({ error: "Notion API error", detail: res.status }, 502);
+      return json({ error: `Notion API error ${res.status}: ${detail}` }, 502);
     }
 
     const page = await res.json();
