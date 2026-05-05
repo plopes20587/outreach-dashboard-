@@ -48,7 +48,7 @@ export default async function handler(request) {
     if (!res.ok) {
       const detail = await res.text();
       console.error("Hunter error:", detail);
-      return json({ error: "Hunter.io API error", detail: res.status }, 502);
+      return json({ error: `Hunter.io error ${res.status}: ${detail}` }, 502);
     }
 
     const data = await res.json();
