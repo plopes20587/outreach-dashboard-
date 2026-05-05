@@ -62,7 +62,7 @@ export default async function handler(request) {
     ...(contact.linkedin && { "Linkedin": { url: contact.linkedin } }),
     ...(contact.contactType && { "Contact Type": { select: { name: contact.contactType } } }),
     ...(contact.leadType    && { "Lead Type":    { select: { name: contact.leadType    } } }),
-    "Status": { select: { name: contact.status || "Did not send" } },
+    "Status": { status: { name: contact.status || "Did not send" } },
     ...(dateTriggered && {
       "Email Sent":     { date: { start: today() } },
       "Follow up date": { date: { start: tenDaysFromNow() } },
