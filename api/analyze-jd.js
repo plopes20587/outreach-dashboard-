@@ -61,7 +61,7 @@ For search_titles: 3 exact LinkedIn-searchable titles to target.`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         max_tokens: 800,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -70,7 +70,7 @@ For search_titles: 3 exact LinkedIn-searchable titles to target.`;
     if (!res.ok) {
       const detail = await res.text();
       console.error("Anthropic error:", detail);
-      return json({ error: "Anthropic API error", detail: res.status }, 502);
+      return json({ error: `Anthropic error ${res.status}: ${detail}` }, 502);
     }
 
     const data = await res.json();
