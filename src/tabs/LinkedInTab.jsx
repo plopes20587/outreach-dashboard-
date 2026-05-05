@@ -212,7 +212,7 @@ export default function LinkedInTab() {
       setNotionStatus("ok");
     } catch (err) {
       console.error("pushNotion:", err.message);
-      setNotionStatus("error");
+      setNotionStatus(err.message || "error");
     } finally {
       setPushing(false);
     }
@@ -497,9 +497,9 @@ export default function LinkedInTab() {
             Contact pushed to Notion.
           </div>
         )}
-        {notionStatus === "error" && (
+        {notionStatus && notionStatus !== "ok" && (
           <div className="notice notice-error" style={{ marginTop: 10 }}>
-            Failed to push to Notion. Check your API key and database permissions.
+            {notionStatus}
           </div>
         )}
 
