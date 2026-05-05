@@ -24,7 +24,7 @@ export default async function handler(request) {
 
   const { searchParams } = new URL(request.url);
   const domain = searchParams.get("domain")?.trim();
-  const limit = parseInt(searchParams.get("limit") || "25", 10);
+  const limit = Math.min(parseInt(searchParams.get("limit") || "10", 10), 10);
 
   if (!domain) {
     return json({ error: "domain query param is required" }, 400);

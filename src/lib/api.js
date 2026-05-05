@@ -14,7 +14,7 @@ async function request(path, options = {}) {
 
 export const api = {
   analyzeJD:      (jd)              => request("/api/analyze-jd",               { method: "POST", body: JSON.stringify({ jd }) }),
-  findContacts:   (domain, limit=25)=> request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
+  findContacts:   (domain, limit=10)=> request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
   fetchLinkedIn:  (url)             => request("/api/fetch-linkedin",            { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn: (company, titles) => request("/api/search-linkedin",           { method: "POST", body: JSON.stringify({ company, titles }) }),
   pushNotion:     (contact)         => request("/api/push-notion",               { method: "POST", body: JSON.stringify({ contact }) }),
