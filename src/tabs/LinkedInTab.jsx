@@ -16,28 +16,62 @@ function initContact() {
   };
 }
 
-function scoreContact(person, targetTitles = []) {
+function classifyContact(person, targetTitles = []) {
   const fullName = [person.first_name, person.last_name].filter(Boolean).join(" ").trim();
   const title = person.position || "";
-  const titleLower = title.toLowerCase();
-  let score = 0;
-  let contactType = "Referral";
+  if (!fullName || !title) return null;
 
-  if (/design|ux|ui|product/i.test(title)) score += 3;
-  if (/head|director|vp|chief|lead|principal|staff/i.test(title)) {
-    score += 2;
+  const t = title.toLowerCase();
+
+  const designLeader =
+    /(design|ux|user\s*experience)/i.test(title) &&
+    /(head|director|vp|chief|lead|principal|staff|manager)/i.test(title);
+
+  const creativeLeader =
+    /(creative\s*director|head\s*of\s*creative|chief\s*creative)/i.test(title);
+
+  const designIC =
+    /(product\s*designer|ux\s*designer|ui\s*designer|senior\s*designer|interaction\s*designer|visual\s*designer|brand\s*designer)/i.test(title) ||
+    (/(designer)/i.test(title) && !/(graphic|merchandise|fashion|interior|industrial|game)/i.test(title));
+
+  const recruiter =
+    /(recruit|talent\s*acquisition|sourcer|talent\s*partner)/i.test(title) &&
+    !/(sales|finance|legal|operations|account|customer\s*success)\s*recruit/i.test(title);
+
+  const informational =
+    /(product\s*manager|product\s*lead|head\s*of\s*product|director\s*of\s*product|vp\s*of\s*product|chief\s*product)/i.test(title) ||
+    /(design\s*ops|designops|design\s*operations)/i.test(title) ||
+    /(ux\s*research|user\s*research|ux\s*researcher|user\s*researcher|design\s*research)/i.test(title) ||
+    /(service\s*designer|content\s*designer|content\s*strategist|ux\s*writer)/i.test(title) ||
+    /(design\s*technologist|design\s*engineer|prototyper)/i.test(title);
+
+  const founder = /(founder|co-founder|ceo)/i.test(title);
+
+  let score = 0;
+  let contactType;
+
+  if (designLeader || creativeLeader) {
+    score = 100;
     contactType = "Hiring Manager";
-  }
-  if (/recruit|talent|people|hr/i.test(title)) {
-    score += 2;
+  } else if (designIC) {
+    score = 80;
+    contactType = "Referral";
+  } else if (recruiter) {
+    score = 70;
     contactType = "Recruiter";
-  }
-  if (/founder|ceo|cto|cpo/i.test(title)) {
-    score += 1;
+  } else if (informational) {
+    score = 50;
+    contactType = "Informational";
+  } else if (founder) {
+    score = 40;
     contactType = "Boss Hunt";
+  } else {
+    return null;
   }
-  targetTitles.forEach((t) => {
-    if (titleLower.includes(t.toLowerCase().split(" ")[0])) score += 1;
+
+  targetTitles.forEach(target => {
+    const keyword = target.toLowerCase().split(" ")[0];
+    if (keyword && t.includes(keyword)) score += 5;
   });
 
   return {
@@ -130,8 +164,8 @@ export default function LinkedInTab() {
     try {
       const data = await api.findContacts(domain);
       const scored = (data.data?.emails || [])
-        .map((p) => scoreContact(p, fit?.search_titles || []))
-        .filter((p) => p.name && p.title)
+        .map((p) => classifyContact(p, fit?.search_titles || []))
+        .filter(Boolean)
         .sort((a, b) => b.score - a.score)
         .slice(0, 8);
       setSearchResults(scored);
@@ -359,6 +393,13 @@ export default function LinkedInTab() {
               </Button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Empty state notice */}
+      {searchDone && searchResults.length === 0 && !showManual && (
+        <div className="notice notice-error">
+          No design or recruiting contacts found at {domain}. Try the manual URL entry below.
         </div>
       )}
 

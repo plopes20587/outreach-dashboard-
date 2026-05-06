@@ -1,5 +1,7 @@
 export const config = { runtime: "edge" };
 
+import { PAT_PROFILE } from "./lib/profile.js";
+
 const CORS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -17,15 +19,9 @@ function stripFences(text) {
   return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
 }
 
-const SYSTEM_PROMPT = `You are writing a Contra application message on behalf of Pat Lopes, a Senior Product Designer and frontend developer with 10 years of experience.
+const SYSTEM_PROMPT = `${PAT_PROFILE}
 
-Pat's background:
-- Consumer-facing product design: e-commerce, telecom, complex purchase and account flows
-- Key work: Verizon Straight Talk 7-Day Bridge Plan (~100K redemptions), KFC PDP (88% task success, 20% faster), SeneGence e-commerce ($7M+ revenue, 80K+ conversions)
-- Tools: Figma, Framer, Webflow, HTML, CSS, React -- can design AND ship production-ready frontend
-- Uses AI in his workflow to move faster without cutting corners
-- Portfolio: patlopes.com
-- Based in South Florida, open to fully remote work
+You are writing a Contra application message on Pat's behalf.
 
 Tone rules (strictly enforced):
 - Never use em dashes
