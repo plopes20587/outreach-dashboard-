@@ -28,6 +28,16 @@ function getSlug(url) {
   }
 }
 
+// Convert "john-doe-designer-abc123" → "john doe" (first two hyphen-separated words)
+function slugToName(slug) {
+  return slug
+    .split("-")
+    .filter(s => !/^\d+$/.test(s))   // drop pure-number segments
+    .slice(0, 3)
+    .join(" ")
+    .toLowerCase();
+}
+
 export default async function handler(request) {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS });
@@ -50,15 +60,20 @@ export default async function handler(request) {
   }
 
   const slug = getSlug(url);
+  const nameHint = slugToName(slug);
 
-  const prompt = `Look up this LinkedIn profile and extract the person's information: ${url}
+  const prompt = `Search for this LinkedIn profile and extract the person's information: ${url}
 
-Search for: site:linkedin.com/in/${slug}
+Run these two searches:
+1. site:linkedin.com/in/${slug}
+2. "${nameHint}" linkedin
 
-Return ONLY valid JSON, no markdown:
+LinkedIn profiles often appear in Google as a title snippet like: "John Doe - Product Designer at Acme Corp - San Francisco Bay Area". Extract the person's details from whatever snippets or pages you find that reference this profile.
+
+ALWAYS return valid JSON, no markdown. Use empty strings for any fields you could not find:
 {"first_name":"<first name>","last_name":"<last name>","title":"<most recent job title>","company":"<most recent employer>","location":"<city, state or country>"}
 
-Use the real name from their profile, not the URL slug. If not found, return: {"error":"not_found"}`;
+Only return {"error":"not_found"} if you found absolutely no information about this person at all.`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -71,7 +86,8 @@ Use the real name from their profile, not the URL slug. If not found, return: {"
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 512,
+        max_tokens: 800,
+        tool_choice: { type: "any" },
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),

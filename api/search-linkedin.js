@@ -40,18 +40,18 @@ export default async function handler(request) {
 
   const titleList = Array.isArray(titles) ? titles.slice(0, 3) : [];
   const queries = titleList.length > 0
-    ? titleList.map((t) => `site:linkedin.com/in "${company}" "${t}"`).join("\n")
-    : `site:linkedin.com/in "${company}"`;
+    ? titleList.map((t) => `"${company}" "${t}" linkedin.com/in`).join("\n")
+    : `"${company}" designer linkedin.com/in`;
 
-  const prompt = `Search LinkedIn for people who work at ${company} with these queries:
+  const prompt = `Search the web for LinkedIn profiles of people at ${company} using these queries:
 ${queries}
 
-Find real LinkedIn profile URLs (linkedin.com/in/...) from the search results. Extract name, title, and a brief snippet for each person found.
+Look for linkedin.com/in/ URLs in the search results — they may appear in portfolio sites, conference attendee lists, blog posts, GitHub profiles, or anywhere else on the web. Extract name, job title, and LinkedIn URL for each person you find.
 
-Return ONLY valid JSON array, no markdown:
+Return ONLY a valid JSON array, no markdown:
 [{"name":"<First Last>","linkedin":"<full linkedin.com/in/... URL>","title":"<job title>","snippet":"<brief context>","contact_type":"<Hiring Manager|Recruiter|Boss Hunt|Referral>"}]
 
-If no profiles found, return: []`;
+If no profiles found after searching, return: []`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -65,6 +65,7 @@ If no profiles found, return: []`;
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
+        tool_choice: { type: "any" },
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),
