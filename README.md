@@ -10,16 +10,34 @@ Personal outreach tool for LinkedIn job leads and Contra freelance applications.
 
 ## Local development
 
+The `/api/*` endpoints are Vercel Edge functions. Plain Vite does **not** run
+them, so `npm run dev` uses `vercel dev`, which serves the React UI and the API
+functions together on one origin (http://localhost:3000) — exactly like
+production.
+
+First-time setup (the API keys already live in Vercel, so we pull them down):
+
 ```bash
-npm install
-npm run dev
+npm install                       # installs deps, including the Vercel CLI
+npx vercel login                  # authenticate the CLI
+npx vercel link                   # link this folder to the Vercel project
+npx vercel env pull .env.local    # pull the keys into a local, gitignored .env.local
 ```
 
-For local API testing, copy `.env.example` to `.env.local` and fill in your keys:
+Then start the app:
 
 ```bash
-cp .env.example .env.local
+npm run dev          # full app: UI + /api functions (http://localhost:3000)
 ```
+
+UI-only work (faster boot, but every `/api/*` call will fail by design):
+
+```bash
+npm run dev:ui       # plain Vite, no functions
+```
+
+If you don't have a Vercel project yet, copy `.env.example` to `.env.local` and
+fill in the keys manually instead of running `vercel env pull`.
 
 ## Required environment variables
 

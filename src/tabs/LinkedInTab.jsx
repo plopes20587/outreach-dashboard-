@@ -121,6 +121,13 @@ export default function LinkedInTab() {
   const [outreachPrompt, setOutreachPrompt] = useState(null);
   const [fetching, setFetching] = useState(false);
   const [fetchStatus, setFetchStatus] = useState(null);
+  // Open/closed state for the two optional helper panels. Both start collapsed
+  // so the always-visible Contact card is the immediate focus -- the right
+  // default for logging a freelance lead (CEO/founder from Crunchbase, Product
+  // Hunt, etc.) where there is no job description. To make the JD-first flow
+  // open by default instead, change these initial values to `true`.
+  const [jdOpen, setJdOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
 
   async function handleAnalyze() {
     if (!jd.trim()) return;
@@ -136,6 +143,8 @@ export default function LinkedInTab() {
       if (data.company) {
         setCompany(data.company);
         setDomain(data.company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com");
+        // Surface the contact-search panel once we have a company to search.
+        setFindOpen(true);
       }
     } catch (err) {
       setAnalyzeError(err.message || "Failed to analyze job description.");
@@ -273,8 +282,14 @@ export default function LinkedInTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* Step 1: Job description */}
-      <Card step={1} title="Job description">
+      {/* Optional helper: analyze a job description */}
+      <Card
+        title="Analyze a job description"
+        optional
+        collapsible
+        open={jdOpen}
+        onToggle={setJdOpen}
+      >
         <Field>
           <textarea
             rows={7}
@@ -300,75 +315,85 @@ export default function LinkedInTab() {
             {analyzeError}
           </div>
         )}
+
+        {/* Fit results render inline once analysis completes */}
+        {fit && (
+          <>
+            <div className="divider" />
+            <FitBar score={fit.fit_score} />
+            <div className="tags-row">
+              <Badge variant={FIT_BADGE[fit.industry_fit] || "neutral"}>
+                {fit.industry} -- {fit.industry_fit}
+              </Badge>
+              <Badge variant="blue">{fit.role_level}</Badge>
+            </div>
+            {(fit.strengths?.length > 0) && (
+              <div className="fit-group fit-group-strengths">
+                <div className="fit-group-label">Why it fits</div>
+                <ul className="fit-bullets">
+                  {fit.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </div>
+            )}
+            {(fit.gaps?.length > 0) && (
+              <div className="fit-group fit-group-gaps">
+                <div className="fit-group-label">Watch-outs</div>
+                <ul className="fit-bullets">
+                  {fit.gaps.map((g, i) => <li key={i}>{g}</li>)}
+                </ul>
+              </div>
+            )}
+            <div className="summary-box">{fit.summary}</div>
+          </>
+        )}
       </Card>
 
-      {/* Step 2: Fit analysis + contact search */}
-      {fit && (
-        <Card step={2} title="Fit analysis">
-          <FitBar score={fit.fit_score} />
-          <div className="tags-row">
-            <Badge variant={FIT_BADGE[fit.industry_fit] || "neutral"}>
-              {fit.industry} -- {fit.industry_fit}
-            </Badge>
-            <Badge variant="blue">{fit.role_level}</Badge>
+      {/* Optional helper: find contacts (works with or without a JD) */}
+      <Card
+        title="Find contacts"
+        optional
+        collapsible
+        open={findOpen}
+        onToggle={setFindOpen}
+      >
+        <div className="grid-2" style={{ marginBottom: 10 }}>
+          <Field label="Company">
+            <input
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Acme Corp"
+            />
+          </Field>
+          <Field label="Company domain (for Hunter.io)">
+            <input
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="acmecorp.com"
+            />
+          </Field>
+        </div>
+        <div className="btn-row">
+          <Button
+            variant="green"
+            onClick={handleHunterSearch}
+            disabled={hunterSearching || !domain.trim()}
+          >
+            {hunterSearching ? "Searching..." : "Find people via Hunter.io"}
+          </Button>
+          <Button
+            variant="blue"
+            onClick={handleLinkedInSearch}
+            disabled={searching || !company.trim()}
+          >
+            {searching ? "Searching..." : "Search LinkedIn (fallback)"}
+          </Button>
+        </div>
+        {hunterError && (
+          <div className="notice notice-error" style={{ marginTop: 10 }}>
+            {hunterError}
           </div>
-          {(fit.strengths?.length > 0) && (
-            <div className="fit-group fit-group-strengths">
-              <div className="fit-group-label">Why it fits</div>
-              <ul className="fit-bullets">
-                {fit.strengths.map((s, i) => <li key={i}>{s}</li>)}
-              </ul>
-            </div>
-          )}
-          {(fit.gaps?.length > 0) && (
-            <div className="fit-group fit-group-gaps">
-              <div className="fit-group-label">Watch-outs</div>
-              <ul className="fit-bullets">
-                {fit.gaps.map((g, i) => <li key={i}>{g}</li>)}
-              </ul>
-            </div>
-          )}
-          <div className="summary-box">{fit.summary}</div>
-          <div className="divider" />
-          <div className="grid-2" style={{ marginBottom: 10 }}>
-            <Field label="Company">
-              <input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="Acme Corp"
-              />
-            </Field>
-            <Field label="Company domain (for Hunter.io)">
-              <input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="acmecorp.com"
-              />
-            </Field>
-          </div>
-          <div className="btn-row">
-            <Button
-              variant="green"
-              onClick={handleHunterSearch}
-              disabled={hunterSearching || !domain.trim()}
-            >
-              {hunterSearching ? "Searching..." : "Find people via Hunter.io"}
-            </Button>
-            <Button
-              variant="blue"
-              onClick={handleLinkedInSearch}
-              disabled={searching || !company.trim()}
-            >
-              {searching ? "Searching..." : "Search LinkedIn (fallback)"}
-            </Button>
-          </div>
-          {hunterError && (
-            <div className="notice notice-error" style={{ marginTop: 10 }}>
-              {hunterError}
-            </div>
-          )}
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* Search results */}
       {searchDone && searchResults.length > 0 && (
@@ -426,8 +451,8 @@ export default function LinkedInTab() {
         </Card>
       )}
 
-      {/* Step 3: Contact profile */}
-      <Card step={3} title="Contact profile">
+      {/* Always-visible core: the contact card itself */}
+      <Card title="Contact">
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div className="grid-2">
             <Field label="Contact name *">

@@ -36,8 +36,8 @@ export default function ContraTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* Step 1: Posting input */}
-      <Card step={1} title="Contra posting">
+      {/* Posting input */}
+      <Card title="Contra posting">
         <Field>
           <textarea
             rows={9}
@@ -65,9 +65,9 @@ export default function ContraTab() {
         )}
       </Card>
 
-      {/* Step 2: Generated result */}
+      {/* Generated result */}
       {result && (
-        <Card step={2} title="Application message">
+        <Card title="Application message">
           <div
             style={{
               display: "flex",

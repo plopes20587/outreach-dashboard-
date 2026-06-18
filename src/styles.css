@@ -170,6 +170,49 @@ a:hover {
   color: var(--text);
 }
 
+/* Collapsible card header (optional helper panels) */
+.card-header-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.card-header-toggle:hover .card-title {
+  color: var(--text);
+}
+
+.card-header-toggle .card-title {
+  color: var(--text-2);
+}
+
+.card-chevron {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--text-2);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.card-chevron.open {
+  transform: rotate(90deg);
+}
+
+.card-optional {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 500;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Divider */
 .divider {
   height: 0.5px;
