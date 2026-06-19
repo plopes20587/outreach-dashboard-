@@ -275,11 +275,9 @@ Visible only after analyze succeeds.
 - Two-column grid: `Company` input + `Company domain (for Hunter.io)` input.
 - Hunter proxy section: text label "Hunter.io proxy URL" + `Configured` badge if set. Click "Configure" to reveal the input. URL is saved to `sessionStorage` under key `hunterProxy` so it persists across the tab session.
 - **Wait — see "API Architecture" below. Pat is moving to a real backend, so the proxy URL field comes OUT.** Hunter calls go directly to `/api/find-contacts` on the same Vercel deployment. No proxy URL state needed.
-- Two action buttons:
-  - `Find people via Hunter.io` (green) — primary
-  - `Search LinkedIn (fallback)` (blue) — secondary
-- Loading states: each button shows "Searching..." while pending.
-- Error display in red-tinted box if Hunter fails.
+- One action button: `Search` (green). It queries both sources from a single click. Hunter.io (fast, needs a domain) runs first and its results render immediately; the LinkedIn web-search fallback (slow, needs a company) runs after and is merged in when it arrives. Enabled when either a domain or a company is present.
+- Loading states: the button shows "Searching..." while pending. While the LinkedIn pass is still running after Hunter results appear, show a muted "Also checking LinkedIn..." line above the results.
+- Error display in red-tinted box if Hunter fails. LinkedIn errors are swallowed (best-effort augment) so a LinkedIn miss never wipes out Hunter results.
 
 ### Search Results
 
@@ -609,9 +607,9 @@ Components import `api` and call methods directly. Errors bubble up as exception
 
 ## Hunter Result Filtering & Classification (Frontend)
 
-When `findContacts` returns Hunter's response, classify each contact into one of five buckets. Anything that doesn't match is dropped entirely -- do not surface it with a low score.
+When `findContacts` returns Hunter's response, classify and rank each contact. EVERY named contact is surfaced -- titles that do not match a known category fall through to "Other" with a low score so they still appear, just ranked below the relevant roles. A contact is only dropped when it has no usable name. (This replaces the earlier drop-everything rule: Pat wants to see all possible contacts in an org from one Search, then pick.) Classification is split into a pure `classifyTitle(title)` helper that returns `{ score, contactType }`, reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
 
-**Five categories (in priority order):**
+**Six categories (in priority order):**
 
 | Category | Score | Criteria |
 |----------|-------|---------|
@@ -620,16 +618,11 @@ When `findContacts` returns Hunter's response, classify each contact into one of
 | Recruiter | 70 | Recruit/talent/sourcer titles -- excludes sales, finance, legal, ops recruiters |
 | Informational | 50 | Product manager/lead/director/VP/CPO, design ops, UX research, service/content designer, design engineer |
 | Boss Hunt | 40 | Founder, co-founder, CEO -- fallback for small startups with no design leader |
-| Dropped | null | Everything else (CFO, CTO, VP Sales, marketing, engineering, ops, legal, etc.) |
+| Other | 10 | Everything else (CFO, CTO, VP Sales, marketing, engineering, ops, legal, etc.) and contacts with no title. Still surfaced, ranked last. |
 
 ```js
-function classifyContact(person, targetTitles = []) {
-  const fullName = [person.first_name, person.last_name].filter(Boolean).join(" ").trim();
-  const title = person.position || "";
-  if (!fullName || !title) return null;
-
-  const t = title.toLowerCase();
-
+// Pure helper: title -> { score, contactType }. Never drops; unmatched -> Other.
+function classifyTitle(title = "") {
   const designLeader =
     /(design|ux|user\s*experience)/i.test(title) &&
     /(head|director|vp|chief|lead|principal|staff|manager)/i.test(title);
@@ -654,28 +647,23 @@ function classifyContact(person, targetTitles = []) {
 
   const founder = /(founder|co-founder|ceo)/i.test(title);
 
-  let score = 0;
-  let contactType = null;
+  if (designLeader || creativeLeader) return { score: 100, contactType: "Hiring Manager" };
+  if (designIC)                       return { score: 80,  contactType: "Referral" };
+  if (recruiter)                      return { score: 70,  contactType: "Recruiter" };
+  if (informational)                  return { score: 50,  contactType: "Informational" };
+  if (founder)                        return { score: 40,  contactType: "Boss Hunt" };
+  return { score: 10, contactType: "Other" };
+}
 
-  if (designLeader || creativeLeader) {
-    score = 100;
-    contactType = "Hiring Manager";
-  } else if (designIC) {
-    score = 80;
-    contactType = "Referral";
-  } else if (recruiter) {
-    score = 70;
-    contactType = "Recruiter";
-  } else if (informational) {
-    score = 50;
-    contactType = "Informational";
-  } else if (founder) {
-    score = 40;
-    contactType = "Boss Hunt";
-  } else {
-    return null;
-  }
+// Hunter record -> unified result. Dropped only when there is no usable name.
+function classifyContact(person, targetTitles = []) {
+  const fullName = [person.first_name, person.last_name].filter(Boolean).join(" ").trim();
+  if (!fullName) return null;
 
+  const title = person.position || "";
+  let { score, contactType } = classifyTitle(title);
+
+  const t = title.toLowerCase();
   targetTitles.forEach(target => {
     const keyword = target.toLowerCase().split(" ")[0];
     if (keyword && t.includes(keyword)) score += 5;
@@ -692,23 +680,24 @@ function classifyContact(person, targetTitles = []) {
   };
 }
 
-// Then:
+// Then (no slice -- show every named contact, ranked):
 const scored = (data.data?.emails || [])
   .map(p => classifyContact(p, fit?.search_titles || []))
   .filter(Boolean)
-  .sort((a, b) => b.score - a.score)
-  .slice(0, 8);
+  .sort((a, b) => b.score - a.score);
 ```
+
+LinkedIn results from `/api/search-linkedin` are normalized through the same `classifyTitle` (via a `mapLinkedInResult` helper) and merged into the Hunter list with a `mergeContacts` helper that de-dupes by email, then normalized LinkedIn URL, then lowercased name (the record with an email wins, missing fields backfilled from the other).
 
 **Verification table:**
 
 | Title | Expected result |
 |-------|-----------------|
-| "Chief Financial Officer" | DROPPED |
-| "VP of Solutions Engineering" | DROPPED |
-| "Program Director" | DROPPED |
-| "Senior Director of Marketing" | DROPPED |
-| "Sales Recruiter" | DROPPED |
+| "Chief Financial Officer" | Other, score 10 |
+| "VP of Solutions Engineering" | Other, score 10 |
+| "Program Director" | Other, score 10 |
+| "Senior Director of Marketing" | Other, score 10 |
+| "Sales Recruiter" | Other, score 10 |
 | "CEO" | Boss Hunt, score 40 |
 | "Senior Technical Recruiter" | Recruiter, score 70 |
 | "Head of Design" | Hiring Manager, score 100 |

@@ -16,13 +16,11 @@ function initContact() {
   };
 }
 
-function classifyContact(person, targetTitles = []) {
-  const fullName = [person.first_name, person.last_name].filter(Boolean).join(" ").trim();
-  const title = person.position || "";
-  if (!fullName || !title) return null;
-
-  const t = title.toLowerCase();
-
+// Maps a job title to a relevance score + category. This is the ranking brain
+// for the contact search. It NEVER drops a title -- anything that does not match
+// a known design/recruiting/founder pattern falls through to "Other" with a low
+// score, so every named person in the org still surfaces (just ranked lower).
+function classifyTitle(title = "") {
   const designLeader =
     /(design|ux|user\s*experience)/i.test(title) &&
     /(head|director|vp|chief|lead|principal|staff|manager)/i.test(title);
@@ -47,28 +45,26 @@ function classifyContact(person, targetTitles = []) {
 
   const founder = /(founder|co-founder|ceo)/i.test(title);
 
-  let score = 0;
-  let contactType;
+  if (designLeader || creativeLeader) return { score: 100, contactType: "Hiring Manager" };
+  if (designIC)                       return { score: 80,  contactType: "Referral" };
+  if (recruiter)                      return { score: 70,  contactType: "Recruiter" };
+  if (informational)                  return { score: 50,  contactType: "Informational" };
+  if (founder)                        return { score: 40,  contactType: "Boss Hunt" };
+  return { score: 10, contactType: "Other" };
+}
 
-  if (designLeader || creativeLeader) {
-    score = 100;
-    contactType = "Hiring Manager";
-  } else if (designIC) {
-    score = 80;
-    contactType = "Referral";
-  } else if (recruiter) {
-    score = 70;
-    contactType = "Recruiter";
-  } else if (informational) {
-    score = 50;
-    contactType = "Informational";
-  } else if (founder) {
-    score = 40;
-    contactType = "Boss Hunt";
-  } else {
-    return null;
-  }
+// Builds a unified contact result from a Hunter.io email record. Returns null
+// only when there is no usable name (a contact we cannot label "First Last" is
+// not actionable). A missing position is allowed -- Hunter often returns
+// position: null, and those still surface as "Other".
+function classifyContact(person, targetTitles = []) {
+  const fullName = [person.first_name, person.last_name].filter(Boolean).join(" ").trim();
+  if (!fullName) return null;
 
+  const title = person.position || "";
+  let { score, contactType } = classifyTitle(title);
+
+  const t = title.toLowerCase();
   targetTitles.forEach(target => {
     const keyword = target.toLowerCase().split(" ")[0];
     if (keyword && t.includes(keyword)) score += 5;
@@ -83,6 +79,59 @@ function classifyContact(person, targetTitles = []) {
     snippet: person.department ? `Dept: ${person.department}` : "",
     score,
   };
+}
+
+// Normalizes a /api/search-linkedin result into the same unified shape Hunter
+// produces, scoring it through classifyTitle so both sources rank on one scale.
+// Returns null when there is no usable name.
+function mapLinkedInResult(r) {
+  const name = (r.name || "").trim();
+  if (!name) return null;
+
+  const { score, contactType } = classifyTitle(r.title || "");
+  return {
+    name,
+    email: "",
+    title: r.title || "",
+    linkedin: r.linkedin || "",
+    // Prefer the server's contact_type when present; otherwise use ours.
+    contact_type: r.contact_type || contactType,
+    snippet: r.snippet || "",
+    score,
+  };
+}
+
+// Merges two contact lists, de-duplicating by email, then normalized LinkedIn
+// URL, then lowercased name. On a collision the record that already has an email
+// (Hunter) wins, and any fields it is missing are backfilled from the other.
+function mergeContacts(primary, secondary) {
+  const byKey = new Map();
+
+  const keyFor = (c) =>
+    (c.email || "").toLowerCase().trim() ||
+    (c.linkedin || "").toLowerCase().replace(/\/+$/, "").trim() ||
+    (c.name || "").toLowerCase().trim();
+
+  for (const c of [...primary, ...secondary]) {
+    const key = keyFor(c);
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, c);
+      continue;
+    }
+    // Keep the one with an email; backfill missing fields from the other.
+    const keep = existing.email ? existing : c;
+    const other = existing.email ? c : existing;
+    byKey.set(key, {
+      ...keep,
+      linkedin: keep.linkedin || other.linkedin,
+      snippet:  keep.snippet  || other.snippet,
+      title:    keep.title    || other.title,
+    });
+  }
+
+  return [...byKey.values()];
 }
 
 // Suggest which Claude.ai reference template the outreach-composer skill should
@@ -148,7 +197,7 @@ export default function OutreachTab() {
   const [company, setCompany] = useState("");
   const [domain, setDomain] = useState("");
   const [searching, setSearching] = useState(false);
-  const [hunterSearching, setHunterSearching] = useState(false);
+  const [linkedinLoading, setLinkedinLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [searchDone, setSearchDone] = useState(false);
   const [hunterError, setHunterError] = useState(null);
@@ -246,43 +295,60 @@ export default function OutreachTab() {
     setShowManual(false);
   }
 
-  async function handleHunterSearch() {
-    if (!domain.trim()) return;
-    setHunterSearching(true);
+  // Single search across both sources. Hunter (fast) runs first and its results
+  // render immediately; LinkedIn (slow, web-search based, often empty) runs after
+  // and is merged in when it arrives. Either a domain (Hunter) or a company
+  // (LinkedIn) is enough to search.
+  async function handleSearch() {
+    const hasDomain = domain.trim();
+    const hasCompany = company.trim();
+    if (!hasDomain && !hasCompany) return;
+
+    setSearching(true);
     setHunterError(null);
     setSearchDone(false);
     setSelIdx(null);
-    try {
-      const data = await api.findContacts(domain);
-      const scored = (data.data?.emails || [])
-        .map((p) => classifyContact(p, fit?.search_titles || []))
-        .filter(Boolean)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 8);
-      setSearchResults(scored);
-    } catch (err) {
-      setHunterError(err.message || "Hunter search failed.");
-    } finally {
-      setHunterSearching(false);
-      setSearchDone(true);
-    }
-  }
+    setSearchResults([]);
 
-  async function handleLinkedInSearch() {
-    if (!company.trim()) return;
-    setSearching(true);
-    setSearchDone(false);
-    setSelIdx(null);
-    try {
-      const data = await api.searchLinkedIn(company, fit?.search_titles || []);
-      setSearchResults(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("searchLinkedIn:", err.message);
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-      setSearchDone(true);
+    const sortByScore = (list) => [...list].sort((a, b) => b.score - a.score);
+    let merged = [];
+
+    // 1. Hunter.io -- fast, has emails. Show its results right away.
+    if (hasDomain) {
+      try {
+        const data = await api.findContacts(domain);
+        merged = sortByScore(
+          (data.data?.emails || [])
+            .map((p) => classifyContact(p, fit?.search_titles || []))
+            .filter(Boolean),
+        );
+        setSearchResults(merged);
+        setSearchDone(true);
+      } catch (err) {
+        setHunterError(err.message || "Hunter search failed.");
+      }
     }
+
+    // 2. LinkedIn -- slow and unreliable, so it only augments. Errors are
+    // swallowed: a LinkedIn miss should never wipe out Hunter's results.
+    if (hasCompany) {
+      setLinkedinLoading(true);
+      try {
+        const data = await api.searchLinkedIn(company, fit?.search_titles || []);
+        const linkedinResults = (Array.isArray(data) ? data : [])
+          .map(mapLinkedInResult)
+          .filter(Boolean);
+        merged = sortByScore(mergeContacts(merged, linkedinResults));
+        setSearchResults(merged);
+      } catch (err) {
+        console.error("searchLinkedIn:", err.message);
+      } finally {
+        setLinkedinLoading(false);
+      }
+    }
+
+    setSearchDone(true);
+    setSearching(false);
   }
 
   async function handleFetchLinkedIn(url) {
@@ -458,17 +524,10 @@ export default function OutreachTab() {
         <div className="btn-row">
           <Button
             variant="green"
-            onClick={handleHunterSearch}
-            disabled={hunterSearching || !domain.trim()}
+            onClick={handleSearch}
+            disabled={searching || (!domain.trim() && !company.trim())}
           >
-            {hunterSearching ? "Searching..." : "Find people via Hunter.io"}
-          </Button>
-          <Button
-            variant="blue"
-            onClick={handleLinkedInSearch}
-            disabled={searching || !company.trim()}
-          >
-            {searching ? "Searching..." : "Search LinkedIn (fallback)"}
+            {searching ? "Searching..." : "Search"}
           </Button>
         </div>
         {hunterError && (
@@ -572,6 +631,11 @@ export default function OutreachTab() {
           <div className="results-header">
             {searchResults.length} contact(s) found -- select one to populate the profile below
           </div>
+          {linkedinLoading && (
+            <div className="results-header" style={{ opacity: 0.6 }}>
+              Also checking LinkedIn...
+            </div>
+          )}
           <div className="results-list">
             {searchResults.map((r, i) => (
               <ContactCard
@@ -593,9 +657,9 @@ export default function OutreachTab() {
       )}
 
       {/* Empty state notice */}
-      {searchDone && searchResults.length === 0 && !showManual && (
+      {searchDone && !searching && searchResults.length === 0 && !showManual && (
         <div className="notice notice-error">
-          No design or recruiting contacts found at {domain}. Try the manual URL entry below.
+          No contacts found for {company || domain}. Try the manual URL entry below.
         </div>
       )}
 
