@@ -5,7 +5,7 @@ import Card from "../components/Card";
 import Field from "../components/Field";
 import Button from "../components/Button";
 
-export default function ContraTab() {
+export default function PitchTab() {
   const [posting, setPosting] = useState("");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
@@ -17,10 +17,10 @@ export default function ContraTab() {
     setGenerating(true);
     setError(false);
     try {
-      const data = await api.generateContra(posting);
+      const data = await api.generatePitch(posting);
       setResult(data);
     } catch (err) {
-      console.error("generateContra:", err.message);
+      console.error("generatePitch:", err.message);
       setError(true);
     } finally {
       setGenerating(false);
@@ -37,13 +37,13 @@ export default function ContraTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
       {/* Posting input */}
-      <Card title="Contra posting">
+      <Card title="Freelance posting">
         <Field>
           <textarea
             rows={9}
             value={posting}
             onChange={(e) => setPosting(e.target.value)}
-            placeholder="Paste the full Contra job posting here..."
+            placeholder="Paste a Contra, Upwork, or other freelance posting here..."
           />
         </Field>
         <div className="btn-row" style={{ marginTop: 10 }}>
@@ -52,7 +52,7 @@ export default function ContraTab() {
             onClick={handleGenerate}
             disabled={generating || !posting.trim()}
           >
-            {generating ? "Generating..." : "Generate application message"}
+            {generating ? "Generating..." : "Generate pitch"}
           </Button>
           <Button variant="default" onClick={handleClear}>
             Clear
@@ -67,7 +67,7 @@ export default function ContraTab() {
 
       {/* Generated result */}
       {result && (
-        <Card title="Application message">
+        <Card title="Pitch">
           <div
             style={{
               display: "flex",
@@ -77,7 +77,7 @@ export default function ContraTab() {
             }}
           >
             <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              Ready to copy into Contra
+              Ready to copy into your proposal
             </span>
             <Button variant="coral" onClick={() => copy(result.message)}>
               {copied ? "Copied!" : "Copy"}

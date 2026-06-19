@@ -21,7 +21,7 @@ function stripFences(text) {
 
 const SYSTEM_PROMPT = `${PAT_PROFILE}
 
-You are writing a Contra application message on Pat's behalf.
+You are writing a freelance pitch on Pat's behalf in response to a job posting (Contra, Upwork, or a similar freelance platform).
 
 Tone rules (strictly enforced):
 - Never use em dashes
@@ -58,13 +58,13 @@ export default async function handler(request) {
     return json({ error: "posting is required" }, 400);
   }
 
-  const userMessage = `Here is a Contra job posting Pat is applying to:
+  const userMessage = `Here is a freelance job posting (Contra, Upwork, or similar) Pat is applying to:
 
 ---
 ${posting}
 ---
 
-Write the application message following all tone and structure rules. Then add a PERSONALIZATION NOTES section.
+Write the pitch following all tone and structure rules. Then add a PERSONALIZATION NOTES section.
 
 Return as JSON only, no markdown:
 {
@@ -104,7 +104,7 @@ Return as JSON only, no markdown:
 
     return json(parsed);
   } catch (err) {
-    console.error("generate-contra-message:", err.message);
+    console.error("generate-pitch:", err.message);
     return json({ error: "Failed to generate message" }, 500);
   }
 }

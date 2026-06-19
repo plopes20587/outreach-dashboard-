@@ -20,7 +20,7 @@ The profile is structured into labeled sections (Core Differentiator, Current Ro
 
 `PAT_PROFILE` is imported by:
 - `api/analyze-jd.js` (full string injected into the JD analysis prompt)
-- `api/generate-contra-message.js` (relevant sections referenced in the system prompt)
+- `api/generate-pitch.js` (relevant sections referenced in the system prompt)
 
 Both serverless functions need access to the same constant. The cleanest approach: put `profile.js` at `src/lib/profile.js` and also create a thin `api/lib/profile.js` that re-exports from a shared location, OR duplicate the file (simpler, less ceremony). Pick the simpler option.
 
@@ -81,8 +81,9 @@ outreach-app/
 │   ├── find-contacts.js          # GET ?domain=... → proxies Hunter.io domain-search
 │   ├── fetch-linkedin.js         # POST {url} → calls Anthropic with web_search to scrape a profile
 │   ├── search-linkedin.js        # POST {company, titles} → calls Anthropic with web_search for LinkedIn fallback
+│   ├── research-person.js        # POST {url}|{name,company} → calls Anthropic with web_search to research a founder/CEO (UC2)
 │   ├── push-notion.js            # POST {contact} → creates a page in the Notion tracker
-│   └── generate-contra-message.js # POST {posting} → calls Anthropic to write a Contra application message
+│   └── generate-pitch.js         # POST {posting} → calls Anthropic to write a freelance pitch (Contra/Upwork/etc.)
 ├── src/
 │   ├── App.jsx                   # Root with tab switcher
 │   ├── main.jsx                  # Vite entry
@@ -94,15 +95,15 @@ outreach-app/
 │   ├── components/
 │   │   ├── Tabs.jsx              # Top tab bar
 │   │   ├── Field.jsx             # Label + input wrapper
-│   │   ├── Card.jsx              # Step card container with numbered header
+│   │   ├── Card.jsx              # Card container: plain title or collapsible/optional header
 │   │   ├── Button.jsx            # Variants: default, blue, green, purple, coral
 │   │   ├── Badge.jsx             # Status pills (green/amber/red/blue/neutral)
 │   │   ├── ContactCard.jsx       # Selectable contact result card
 │   │   ├── PromptBox.jsx         # Copy-to-clipboard prompt display
 │   │   └── FitBar.jsx            # Score bar with color coding
 │   ├── tabs/
-│   │   ├── LinkedInTab.jsx       # Full LinkedIn outreach flow
-│   │   └── ContraTab.jsx         # Full Contra application flow
+│   │   ├── OutreachTab.jsx       # Outreach flow: job-based (UC1) + founder research (UC2) → contact + outreach handoff
+│   │   └── PitchTab.jsx          # Freelance pitch flow (UC3): Contra/Upwork posting → pitch, no contact saved
 │   └── hooks/
 │       └── useCopy.js            # Hook for clipboard copy with copied state
 ├── .env.example                  # Documents required env vars (no real values)
@@ -216,9 +217,15 @@ Sticky bar at top inside a `var(--bg-1)` rounded container with 6px padding. Eac
 
 ---
 
-## Tab 1: LinkedIn Outreach Flow
+## Tab 1: Outreach Flow
 
-### State (in `LinkedInTab.jsx`)
+This tab handles two entry points that converge on the same Contact card + outreach handoff:
+- **UC1 (job-based):** paste a JD → fit analysis → find contacts (Hunter/LinkedIn) → contact card.
+- **UC2 (person-based, freelance acquisition):** research a founder/CEO by URL or name+company (`/api/research-person`) → contact card.
+
+The JD analysis, Find contacts, and Research a person sections are collapsible **optional** panels (no numbered steps); the Contact card is always visible. The "Draft outreach" button still does NOT call an LLM (Hard Rule #9) -- it builds an enriched prompt (fit summary, research notes + hook, contact/lead type, and a suggested reference template) and copies it to the clipboard for Pat's Claude.ai outreach-composer skill.
+
+### State (in `OutreachTab.jsx`)
 
 ```js
 const [jd, setJd] = useState("");
@@ -355,9 +362,9 @@ This makes the handoff between tools explicit in the UI so Pat doesn't lose the 
 
 ---
 
-## Tab 2: Contra Application Flow
+## Tab 2: Freelance Pitch Flow (UC3)
 
-Independent state from LinkedIn tab. No shared context.
+Generates a tailored pitch for a freelance posting (Contra, Upwork, or similar). No contact is saved. Independent state from the Outreach tab. No shared context.
 
 ### State
 
@@ -384,7 +391,7 @@ Visible after generation succeeds.
 
 ### Generation Logic
 
-POST to `/api/generate-contra-message` with `{ posting }`. The serverless function uses a system prompt baked in (see API spec below) to enforce tone rules.
+POST to `/api/generate-pitch` with `{ posting }`. The serverless function uses a system prompt baked in (see API spec below) to enforce tone rules.
 
 ---
 
@@ -510,7 +517,13 @@ POST to `https://api.notion.com/v1/pages` with body:
 
 Document this in the README.
 
-### `/api/generate-contra-message` (POST)
+### `/api/research-person` (POST)
+
+**Request:** `{ url?: string, name?: string, company?: string }` (at least one of `url` or `name` required)
+
+**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, hook }`, where `research_notes` is 2-3 sentences and `hook` is one specific real observation to open with. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
+
+### `/api/generate-pitch` (POST)
 
 **Request:** `{ posting: string }`
 
@@ -584,8 +597,9 @@ export const api = {
   findContacts:     (domain, limit=25) => request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
   fetchLinkedIn:    (url)              => request("/api/fetch-linkedin",    { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn:   (company, titles)  => request("/api/search-linkedin",   { method: "POST", body: JSON.stringify({ company, titles }) }),
+  researchPerson:   ({ url, name, company }) => request("/api/research-person", { method: "POST", body: JSON.stringify({ url, name, company }) }),
   pushNotion:       (contact)          => request("/api/push-notion",       { method: "POST", body: JSON.stringify({ contact }) }),
-  generateContra:   (posting)          => request("/api/generate-contra-message", { method: "POST", body: JSON.stringify({ posting }) }),
+  generatePitch:    (posting)          => request("/api/generate-pitch",    { method: "POST", body: JSON.stringify({ posting }) }),
 };
 ```
 
@@ -741,8 +755,8 @@ Build these in order, with no API calls yet, so the visual layer is testable in 
 
 ### Phase 3: Tab Layouts (no API yet)
 
-11. `LinkedInTab.jsx` — full UI with all state, but API calls just throw "not implemented"
-12. `ContraTab.jsx` — full UI with all state, same approach
+11. `OutreachTab.jsx` — full UI with all state, but API calls just throw "not implemented"
+12. `PitchTab.jsx` — full UI with all state, same approach
 13. `App.jsx` — root with Tabs + active tab
 
 At this point, run `npm run dev` and verify all visuals match the dark theme spec, all interactions work locally (typing, selecting, etc), and there are no console errors.
@@ -786,8 +800,8 @@ These are NOT suggestions. The agent must follow them strictly.
 6. **Single-file components stay single-file.** Don't split a 50-line component into 4 files. The file structure above is the limit of how granular this should get.
 7. **Use the exact Anthropic model `claude-sonnet-4-20250514`** in all backend functions. Don't substitute a different model.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
-9. **Do NOT build LLM-powered outreach generation in the LinkedIn flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt. Outreach writing happens in Claude.ai where Pat's skills and reference templates live. See the Architecture Overview at the top of this doc.
-10. **The Contra tab IS the exception** to rule 9. Contra messages are generated end-to-end via `/api/generate-contra-message` because the tone rules are self-contained and don't need the outreach-composer skill.
+9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
+10. **The Freelance Pitch tab IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill.
 
 ---
 

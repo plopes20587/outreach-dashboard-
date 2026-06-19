@@ -1,21 +1,21 @@
 import { useState } from "react";
 import Tabs from "./components/Tabs";
-import LinkedInTab from "./tabs/LinkedInTab";
-import ContraTab from "./tabs/ContraTab";
+import OutreachTab from "./tabs/OutreachTab";
+import PitchTab from "./tabs/PitchTab";
 
 const TABS = [
-  { id: "linkedin", label: "LinkedIn Outreach" },
-  { id: "contra",   label: "Contra" },
+  { id: "outreach", label: "Outreach" },
+  { id: "pitch",    label: "Freelance Pitch" },
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("linkedin");
+  const [activeTab, setActiveTab] = useState("outreach");
 
   return (
     <div className="app-wrapper">
       <Tabs tabs={TABS} active={activeTab} onChange={setActiveTab} />
-      {activeTab === "linkedin" && <LinkedInTab />}
-      {activeTab === "contra"   && <ContraTab />}
+      {activeTab === "outreach" && <OutreachTab />}
+      {activeTab === "pitch"    && <PitchTab />}
     </div>
   );
 }

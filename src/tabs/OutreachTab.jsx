@@ -85,22 +85,62 @@ function classifyContact(person, targetTitles = []) {
   };
 }
 
-function buildOutreachPrompt(contact, fit) {
-  let msg = `Draft an outreach message for ${contact.name || "this contact"}`;
-  if (contact.title)   msg += `, ${contact.title}`;
-  if (contact.company) msg += ` at ${contact.company}`;
-  msg += ".";
-  if (contact.contactType) msg += ` Contact type: ${contact.contactType}.`;
-  if (contact.leadType)    msg += ` Lead type: ${contact.leadType}.`;
-  if (contact.linkedin)    msg += ` LinkedIn: ${contact.linkedin}.`;
-  if (contact.location)    msg += ` Location: ${contact.location}.`;
-  if (fit?.summary)        msg += ` Fit context: ${fit.summary.substring(0, 300)}`;
-  return msg;
+// Suggest which Claude.ai reference template the outreach-composer skill should
+// lean on, based on contact type first, then lead temperature.
+function suggestTemplate(contact) {
+  if (contact.contactType === "Boss Hunt")     return "Boss Hunting Playbook";
+  if (contact.contactType === "Informational") return "Informational Interview";
+  if (contact.leadType === "Warm" || contact.leadType === "Warm-ish") {
+    return "Warm Outreach Strategy";
+  }
+  return "Cold Outreach Strategy";
+}
+
+// Builds the structured prompt that Pat copies into his Claude.ai project, where
+// the outreach-composer skill + reference templates actually write the message.
+// This app intentionally does NOT generate the message itself (CLAUDE.md Hard
+// Rule #9). `fit` is present for job-based contacts (UC1); `research` is present
+// for researched founders/CEOs (UC2). Both are optional.
+function buildOutreachPrompt(contact, fit, research) {
+  const lines = [];
+
+  let opener = `Draft an outreach message for ${contact.name || "this contact"}`;
+  if (contact.title)   opener += `, ${contact.title}`;
+  if (contact.company) opener += ` at ${contact.company}`;
+  opener += ".";
+  lines.push(opener);
+
+  if (contact.contactType) lines.push(`Contact type: ${contact.contactType}.`);
+  if (contact.leadType)    lines.push(`Lead type: ${contact.leadType}.`);
+  if (contact.location)    lines.push(`Location: ${contact.location}.`);
+  if (contact.linkedin)    lines.push(`LinkedIn: ${contact.linkedin}.`);
+
+  if (fit?.summary) {
+    lines.push("", `Fit context (from the job description): ${fit.summary}`);
+    if (fit.strengths?.length) {
+      lines.push(`Why it fits: ${fit.strengths.join("; ")}.`);
+    }
+  }
+
+  if (research?.research_notes) {
+    lines.push("", `Research on this person: ${research.research_notes}`);
+  }
+  if (research?.hook) {
+    lines.push(`Specific hook to open with: ${research.hook}`);
+  }
+
+  lines.push(
+    "",
+    `Suggested template: ${suggestTemplate(contact)}.`,
+    "Use my outreach-composer skill and the suggested reference template to write the message.",
+  );
+
+  return lines.join("\n");
 }
 
 const FIT_BADGE = { strong: "green", moderate: "amber", mismatch: "red" };
 
-export default function LinkedInTab() {
+export default function OutreachTab() {
   const [jd, setJd] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
@@ -128,6 +168,48 @@ export default function LinkedInTab() {
   // open by default instead, change these initial values to `true`.
   const [jdOpen, setJdOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  // "Research a person" panel (UC2: founders/CEOs from Product Hunt, Crunchbase).
+  const [researchOpen, setResearchOpen] = useState(false);
+  const [researchMode, setResearchMode] = useState("url"); // "url" | "name"
+  const [researchUrl, setResearchUrl] = useState("");
+  const [researchName, setResearchName] = useState("");
+  const [researchCompany, setResearchCompany] = useState("");
+  const [researching, setResearching] = useState(false);
+  const [researchData, setResearchData] = useState(null); // { research_notes, hook }
+  const [researchError, setResearchError] = useState(null);
+
+  async function handleResearch() {
+    const payload =
+      researchMode === "url"
+        ? { url: researchUrl.trim() }
+        : { name: researchName.trim(), company: researchCompany.trim() };
+    if (researchMode === "url" ? !payload.url : !payload.name) return;
+
+    setResearching(true);
+    setResearchError(null);
+    try {
+      const data = await api.researchPerson(payload);
+      setContact((c) => ({
+        ...c,
+        name:     data.name     || c.name,
+        title:    data.title    || c.title,
+        company:  data.company  || c.company,
+        location: data.location || c.location,
+        linkedin: researchMode === "url" && researchUrl.includes("linkedin.com/in/")
+          ? researchUrl.trim()
+          : c.linkedin,
+      }));
+      setResearchData({ research_notes: data.research_notes, hook: data.hook });
+    } catch (err) {
+      setResearchError(
+        err.message === "not_found"
+          ? "Could not find this person. Try a different URL or add a company."
+          : err.message || "Research failed.",
+      );
+    } finally {
+      setResearching(false);
+    }
+  }
 
   async function handleAnalyze() {
     if (!jd.trim()) return;
@@ -262,7 +344,7 @@ export default function LinkedInTab() {
   }
 
   function handleDraftOutreach() {
-    setOutreachPrompt(buildOutreachPrompt(contact, fit));
+    setOutreachPrompt(buildOutreachPrompt(contact, fit, researchData));
   }
 
   function handleReset() {
@@ -271,6 +353,7 @@ export default function LinkedInTab() {
     setOutreachPrompt(null);
     setNotionStatus(null);
     setFetchStatus(null);
+    setResearchData(null);
   }
 
   const fetchBadge =
@@ -392,6 +475,94 @@ export default function LinkedInTab() {
           <div className="notice notice-error" style={{ marginTop: 10 }}>
             {hunterError}
           </div>
+        )}
+      </Card>
+
+      {/* Optional helper: research a person (founders/CEOs from Product Hunt, Crunchbase) */}
+      <Card
+        title="Research a person"
+        optional
+        collapsible
+        open={researchOpen}
+        onToggle={setResearchOpen}
+      >
+        <div className="btn-row" style={{ marginBottom: 10 }}>
+          <Button
+            variant={researchMode === "url" ? "blue" : "default"}
+            onClick={() => setResearchMode("url")}
+          >
+            By URL
+          </Button>
+          <Button
+            variant={researchMode === "name" ? "blue" : "default"}
+            onClick={() => setResearchMode("name")}
+          >
+            By name + company
+          </Button>
+        </div>
+
+        {researchMode === "url" ? (
+          <Field label="Profile or company URL (Product Hunt, Crunchbase, site, LinkedIn)">
+            <input
+              value={researchUrl}
+              onChange={(e) => setResearchUrl(e.target.value)}
+              placeholder="https://www.producthunt.com/@... or company site"
+            />
+          </Field>
+        ) : (
+          <div className="grid-2">
+            <Field label="Name">
+              <input
+                value={researchName}
+                onChange={(e) => setResearchName(e.target.value)}
+                placeholder="First Last"
+              />
+            </Field>
+            <Field label="Company">
+              <input
+                value={researchCompany}
+                onChange={(e) => setResearchCompany(e.target.value)}
+                placeholder="Acme Corp"
+              />
+            </Field>
+          </div>
+        )}
+
+        <div className="btn-row" style={{ marginTop: 10 }}>
+          <Button
+            variant="green"
+            onClick={handleResearch}
+            disabled={
+              researching ||
+              (researchMode === "url" ? !researchUrl.trim() : !researchName.trim())
+            }
+          >
+            {researching ? "Researching..." : "Research person"}
+          </Button>
+        </div>
+
+        {researchError && (
+          <div className="notice notice-error" style={{ marginTop: 10 }}>
+            {researchError}
+          </div>
+        )}
+
+        {researchData && (researchData.research_notes || researchData.hook) && (
+          <>
+            <div className="divider" />
+            {researchData.research_notes && (
+              <div className="fit-group">
+                <div className="fit-group-label">Research notes</div>
+                <div className="summary-box">{researchData.research_notes}</div>
+              </div>
+            )}
+            {researchData.hook && (
+              <div className="fit-group fit-group-strengths">
+                <div className="fit-group-label">Outreach hook</div>
+                <div className="summary-box">{researchData.hook}</div>
+              </div>
+            )}
+          </>
         )}
       </Card>
 

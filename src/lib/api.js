@@ -17,6 +17,7 @@ export const api = {
   findContacts:   (domain, limit=10)=> request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
   fetchLinkedIn:  (url)             => request("/api/fetch-linkedin",            { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn: (company, titles) => request("/api/search-linkedin",           { method: "POST", body: JSON.stringify({ company, titles }) }),
+  researchPerson: ({ url, name, company }) => request("/api/research-person",     { method: "POST", body: JSON.stringify({ url, name, company }) }),
   pushNotion:     (contact)         => request("/api/push-notion",               { method: "POST", body: JSON.stringify({ contact }) }),
-  generateContra: (posting)         => request("/api/generate-contra-message",   { method: "POST", body: JSON.stringify({ posting }) }),
+  generatePitch:  (posting)         => request("/api/generate-pitch",            { method: "POST", body: JSON.stringify({ posting }) }),
 };
