@@ -2,6 +2,11 @@ export const config = { runtime: "edge" };
 
 import { PAT_PROFILE } from "./lib/profile.js";
 
+// This function intentionally uses Groq's free tier (OpenAI-compatible API)
+// instead of Anthropic (cost decision -- see CLAUDE.md Hard Rule #7 carve-out).
+// The pitch is pure text generation with no web search, so it ports cleanly.
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
 const CORS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -42,8 +47,8 @@ export default async function handler(request) {
     return new Response(null, { status: 204, headers: CORS });
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return json({ error: "ANTHROPIC_API_KEY is not configured" }, 500);
+  if (!process.env.GROQ_API_KEY) {
+    return json({ error: "GROQ_API_KEY is not configured" }, 500);
   }
 
   let body;
@@ -73,36 +78,44 @@ Return as JSON only, no markdown:
 }`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: GROQ_MODEL,
         max_tokens: 1200,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
+        // JSON mode: forces a JSON object back. The user message already asks for JSON,
+        // which OpenAI-compatible JSON mode requires.
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userMessage },
+        ],
       }),
     });
 
     if (!res.ok) {
       const detail = await res.text();
-      console.error("Anthropic error:", detail);
-      return json({ error: "Anthropic API error", detail: res.status }, 502);
+      console.error("Groq error:", detail);
+      return json({ error: "Groq API error", detail: res.status }, 502);
     }
 
     const data = await res.json();
-    const textBlock = data.content?.find((b) => b.type === "text");
-    const parsed = JSON.parse(stripFences(textBlock?.text || "{}"));
+    const textBlock = data.choices?.[0]?.message?.content;
+    // stripFences is defensive only -- JSON mode should already give us clean JSON.
+    const parsed = JSON.parse(stripFences(textBlock || "{}"));
 
     if (!parsed.message || !parsed.notes) {
       return json({ error: "Unexpected response format from model" }, 502);
     }
 
-    return json(parsed);
+    // Pat's hard rule: never use em dashes. Open models honor this less reliably
+    // than Claude did, so strip any that slip through before returning.
+    const noEmDash = (s) => s.replace(/\s*—\s*/g, ", ");
+    return json({ message: noEmDash(parsed.message), notes: noEmDash(parsed.notes) });
   } catch (err) {
     console.error("generate-pitch:", err.message);
     return json({ error: "Failed to generate message" }, 500);

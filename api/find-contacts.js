@@ -36,25 +36,64 @@ export default async function handler(request) {
     .replace(/\/.*$/, "")
     .toLowerCase();
 
-  try {
-    const hunterUrl =
-      `https://api.hunter.io/v2/domain-search` +
-      `?domain=${encodeURIComponent(cleanDomain)}` +
-      `&limit=${limit}` +
-      `&api_key=${process.env.HUNTER_API_KEY}`;
+  const hunterUrl =
+    `https://api.hunter.io/v2/domain-search` +
+    `?domain=${encodeURIComponent(cleanDomain)}` +
+    `&limit=${limit}` +
+    `&api_key=${process.env.HUNTER_API_KEY}`;
 
-    const res = await fetch(hunterUrl);
+  // Hunter sits behind Cloudflare, which intermittently returns a transient
+  // 502/503/504 ("Bad Gateway") even when the API itself is healthy. These
+  // almost always succeed on a quick retry, so we retry transient upstream
+  // failures with a short increasing backoff before giving up. We do NOT retry
+  // 4xx errors (bad key, bad domain), since those will never self-resolve.
+  const TRANSIENT_STATUSES = [502, 503, 504];
+  const MAX_ATTEMPTS = 3;
+  let lastErrorDetail = "";
+  let lastErrorStatus = 502;
 
-    if (!res.ok) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(hunterUrl);
+
+      if (res.ok) {
+        const data = await res.json();
+        return json(data);
+      }
+
       const detail = await res.text();
-      console.error("Hunter error:", detail);
-      return json({ error: `Hunter.io error ${res.status}: ${detail}` }, 502);
+      lastErrorDetail = detail;
+      lastErrorStatus = res.status;
+
+      // Non-transient (e.g. 401 bad key, 400 bad domain): fail immediately.
+      if (!TRANSIENT_STATUSES.includes(res.status)) {
+        console.error(`Hunter error ${res.status}:`, detail);
+        return json({ error: `Hunter.io error ${res.status}: ${detail}` }, 502);
+      }
+
+      console.error(
+        `Hunter transient error ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS})`
+      );
+    } catch (err) {
+      // Network-level failure (DNS, connection reset): also worth retrying.
+      lastErrorDetail = err.message;
+      console.error(
+        `find-contacts fetch failed (attempt ${attempt}/${MAX_ATTEMPTS}):`,
+        err.message
+      );
     }
 
-    const data = await res.json();
-    return json(data);
-  } catch (err) {
-    console.error("find-contacts:", err.message);
-    return json({ error: "Failed to fetch contacts" }, 500);
+    // Back off before the next attempt, but not after the final one.
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+    }
   }
+
+  return json(
+    {
+      error: `Hunter.io is temporarily unavailable (${lastErrorStatus}). Please try again in a moment.`,
+      detail: lastErrorDetail,
+    },
+    502
+  );
 }

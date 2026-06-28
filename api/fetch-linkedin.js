@@ -85,10 +85,12 @@ Only return {"error":"not_found"} if you found absolutely no information about t
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 800,
+        // Haiku is plenty for extracting structured fields from search snippets,
+        // at ~3x lower token cost than Sonnet. max_uses caps the paid web searches.
+        model: "claude-haiku-4-5",
+        max_tokens: 400,
         tool_choice: { type: "any" },
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
         messages: [{ role: "user", content: prompt }],
       }),
     });

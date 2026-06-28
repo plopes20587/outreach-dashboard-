@@ -75,10 +75,12 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
         "content-type": "application/json",
       },
       body: JSON.stringify({
+        // Kept on Sonnet: writing research_notes + a real hook needs judgment.
+        // max_uses caps the paid web searches per call.
         model: "claude-sonnet-4-6",
         max_tokens: 1000,
         tool_choice: { type: "any" },
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
         messages: [{ role: "user", content: prompt }],
       }),
     });

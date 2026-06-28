@@ -329,9 +329,12 @@ export default function OutreachTab() {
       }
     }
 
-    // 2. LinkedIn -- slow and unreliable, so it only augments. Errors are
-    // swallowed: a LinkedIn miss should never wipe out Hunter's results.
-    if (hasCompany) {
+    // 2. LinkedIn -- slow, unreliable, and a paid web search. It now runs ONLY
+    // as a fallback: when Hunter returned fewer than 2 contacts (found nothing or
+    // just one, errored, or there was no domain to query). This avoids paying for
+    // a usually-empty web search when Hunter already gave enough to work with.
+    // Errors are swallowed: a LinkedIn miss should never wipe out Hunter's results.
+    if (hasCompany && merged.length < 2) {
       setLinkedinLoading(true);
       try {
         const data = await api.searchLinkedIn(company, fit?.search_titles || []);

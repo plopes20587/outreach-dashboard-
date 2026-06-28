@@ -123,7 +123,8 @@ Document these in `.env.example`. Pat sets them in the Vercel dashboard, not in 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes | For all Anthropic API calls (JD analysis, LinkedIn fetch, Contra message) |
+| `ANTHROPIC_API_KEY` | Yes | For the Anthropic API calls: JD analysis, LinkedIn fetch, LinkedIn search, person research |
+| `GROQ_API_KEY` | Yes | For the Freelance Pitch tab (`generate-pitch`), which uses Groq's free tier |
 | `HUNTER_API_KEY` | Yes | For Hunter.io domain-search |
 | `NOTION_API_KEY` | Yes | Internal integration token for the Notion workspace |
 | `NOTION_DATABASE_ID` | Yes | The Contact Tracker database ID: `2f312b17-d357-8155-b06f-000b29a1c83f` |
@@ -275,7 +276,7 @@ Visible only after analyze succeeds.
 - Two-column grid: `Company` input + `Company domain (for Hunter.io)` input.
 - Hunter proxy section: text label "Hunter.io proxy URL" + `Configured` badge if set. Click "Configure" to reveal the input. URL is saved to `sessionStorage` under key `hunterProxy` so it persists across the tab session.
 - **Wait — see "API Architecture" below. Pat is moving to a real backend, so the proxy URL field comes OUT.** Hunter calls go directly to `/api/find-contacts` on the same Vercel deployment. No proxy URL state needed.
-- One action button: `Search` (green). It queries both sources from a single click. Hunter.io (fast, needs a domain) runs first and its results render immediately; the LinkedIn web-search fallback (slow, needs a company) runs after and is merged in when it arrives. Enabled when either a domain or a company is present.
+- One action button: `Search` (green). It queries both sources from a single click. Hunter.io (fast, needs a domain) runs first and its results render immediately; the LinkedIn web-search fallback (slow, and a paid Anthropic web search) runs **only when Hunter returns fewer than 2 contacts** and is merged in when it arrives. Enabled when either a domain or a company is present. (The fallback was previously fired on every Search; it is now gated to the Hunter-empty case for cost efficiency.)
 - Loading states: the button shows "Searching..." while pending. While the LinkedIn pass is still running after Hunter results appear, show a muted "Also checking LinkedIn..." line above the results.
 - Error display in red-tinted box if Hunter fails. LinkedIn errors are swallowed (best-effort augment) so a LinkedIn miss never wipes out Hunter results.
 
@@ -450,7 +451,7 @@ For search_titles: 3 exact LinkedIn-searchable titles to target.
 
 **Request:** `{ url: string }`
 
-**Behavior:** Call Anthropic with web_search tool. Use this prompt:
+**Behavior:** Call Anthropic with the web_search tool. Uses `claude-haiku-4-5` (this is pure field extraction, so Haiku is enough at ~3x lower token cost than Sonnet) with `max_tokens` 400 and web_search capped at `max_uses: 2` for cost efficiency. Use this prompt:
 
 ```
 Look up this LinkedIn profile and extract the person's information: ${url}
@@ -469,9 +470,9 @@ Use the real name from their profile, not the URL slug. If not found, return: {"
 
 **Request:** `{ company: string, titles: string[] }`
 
-**Behavior:** Call Anthropic with web_search. Run `site:linkedin.com/in "${company}" "${title}"` queries for each title. Parse out real LinkedIn profile URLs from results. Return array of `{ name, linkedin, title, snippet, contact_type }`.
+**Behavior:** Call Anthropic with web_search. Run `site:linkedin.com/in "${company}" "${title}"` queries for each title. Parse out real LinkedIn profile URLs from results. Return array of `{ name, linkedin, title, snippet, contact_type }`. Uses `claude-haiku-4-5` with `max_tokens` 512 and web_search capped at `max_uses: 2` for cost efficiency.
 
-This is the LinkedIn fallback when Hunter doesn't return useful results. Note: this is unreliable since LinkedIn blocks Google indexing of profiles — keep the implementation as it is in the current artifact and accept that it may return empty.
+This is the LinkedIn fallback when Hunter doesn't return useful results, and the frontend now calls it **only when Hunter returns fewer than 2 contacts** (cost efficiency). Note: this is unreliable since LinkedIn blocks Google indexing of profiles — keep the implementation as it is in the current artifact and accept that it may return empty.
 
 ### `/api/push-notion` (POST)
 
@@ -519,13 +520,13 @@ Document this in the README.
 
 **Request:** `{ url?: string, name?: string, company?: string }` (at least one of `url` or `name` required)
 
-**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, hook }`, where `research_notes` is 2-3 sentences and `hook` is one specific real observation to open with. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
+**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, hook }`, where `research_notes` is 2-3 sentences and `hook` is one specific real observation to open with. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
 
 ### `/api/generate-pitch` (POST)
 
 **Request:** `{ posting: string }`
 
-**Behavior:** Call Anthropic with a system prompt that combines `PAT_PROFILE` (imported from `lib/profile.js`) with the Contra-specific tone rules below. The system prompt should follow this template:
+**Behavior:** Call Groq (`llama-3.3-70b-versatile`, free tier, OpenAI-compatible `chat/completions` endpoint) with a system prompt that combines `PAT_PROFILE` (imported from `lib/profile.js`) with the Contra-specific tone rules below. Groq is used here instead of Anthropic as a cost decision (see Hard Rule #7 exception); the request uses `response_format: { type: "json_object" }` to guarantee a `{ message, notes }` JSON object. The system prompt should follow this template:
 
 ```js
 const systemPrompt = `${PAT_PROFILE}
@@ -567,7 +568,7 @@ Return as JSON only, no markdown:
 }
 ```
 
-Use claude-sonnet-4-20250514, max_tokens 1200.
+Use Groq `llama-3.3-70b-versatile` with `max_tokens` 1200.
 
 ---
 
@@ -787,7 +788,7 @@ These are NOT suggestions. The agent must follow them strictly.
 4. **No localStorage in the artifact's React tree** for sensitive data. The Hunter proxy URL session storage from the previous artifact version is no longer needed since calls go to same-origin `/api/*`.
 5. **Visual fidelity matters.** This is a designer's tool. Match the dark palette and spacing exactly. Don't introduce new colors, new spacings, or different border styles.
 6. **Single-file components stay single-file.** Don't split a 50-line component into 4 files. The file structure above is the limit of how granular this should get.
-7. **Use the exact Anthropic model `claude-sonnet-4-20250514`** in all backend functions. Don't substitute a different model.
+7. **Use the exact Anthropic model `claude-sonnet-4-20250514`** in all backend functions. Don't substitute a different model. **Exception:** `generate-pitch` intentionally uses Groq's free tier (`llama-3.3-70b-versatile`, OpenAI-compatible API) instead of Anthropic. This is a deliberate cost decision, not a model substitution within an Anthropic call. It is safe because the pitch is self-contained (no web search, no Claude.ai skills/connectors) so the swap does not affect any other flow.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **The Freelance Pitch tab IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill.
