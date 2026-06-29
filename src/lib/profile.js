@@ -29,7 +29,27 @@ TARGET ROLES
 Senior, Lead, Staff, or Principal Product Designer. UX Engineer is also a fit given Pat's frontend skills. Pat is targeting roles where he can step further into the team lead space (he held Lead at Photon and feels he stepped back into a senior IC role at Verizon).
 
 TARGET INDUSTRIES (in priority order)
-Fintech, AI, entertainment, e-commerce. Roles outside these industries should be flagged clearly. Telecom and B2B SaaS are not target industries even though Pat has experience there.
+Travel, tech, fintech, gaming, entertainment, e-commerce, AI, edtech. Roles outside these industries should be flagged clearly. Telecom and B2B SaaS are not target industries even though Pat has experience there. Ad-driven business models, fast-fashion, insurance, and marketing agencies are misaligned and should be flagged as a poor fit.
+
+COMPANY TYPE PREFERENCES
+Aligned: early-stage startup, high-growth startup, mid-size tech, agency.
+Avoid: large corporations and enterprise environments — EXCEPT when the company is in one of the target industries above (e.g., Netflix, Spotify, and Blizzard are large but are explicitly aspirational target companies because they sit in entertainment/gaming/tech). Outside a target industry, large-corp/enterprise size should be flagged as a gap. Pat's own enterprise background (Verizon, Photon/KFC, SeneGence) is prior experience, not a forward-looking target — it should not be treated as evidence that enterprise roles are a good fit going forward.
+
+IDEAL TEAM & LEADERSHIP
+Team environment: process-oriented, autonomous, clear and constant communication, clear roles and responsibilities, clear strategy and requirements.
+Leadership style that helps Pat thrive: autonomous and trust-based, direction-oriented with clear expectations (not micromanaging, not directionless).
+
+ALIGNMENT CRITERIA PRIORITY (ranked, for weighing fit)
+1. Stability & funding
+2. Remote preference
+3. Growth potential
+4. Industry interest
+5. Team culture
+
+TARGET COMPANIES (named — flag explicitly if a JD is from one of these)
+Stretch (aspirational): Google, Netflix, Spotify, Coinbase, Blizzard
+Strong Fit (next-step, excited about): Ramp, Fitbod, Popeyes, Meta, Amazon, Anthropic, Figma
+Sandbox (good entry point to build leverage): Stitch Fix, Hopper, Uplight, Toast, Nextdoor
 
 COMPENSATION & LOCATION
 Target: $160K+ base. Fully remote or hybrid in South Florida (Fort Lauderdale area). Open to occasional travel but not relocation.
