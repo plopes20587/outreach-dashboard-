@@ -17,6 +17,29 @@ function stripFences(text) {
   return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
 }
 
+// Extract a JSON object from the model's text. With web search on, Claude often
+// wraps the JSON in prose or citations, so a plain JSON.parse throws. Try a clean
+// parse first, then fall back to the first {...} block. Returns null on failure
+// (never throws) so the caller can respond gracefully instead of 500-ing.
+function extractJson(text) {
+  if (!text) return null;
+  const stripped = stripFences(text);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(stripped.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 // Research a person from either a URL (Product Hunt, Crunchbase, company site,
 // LinkedIn) or a name + company. Used by the "Research a person" panel for
 // freelance acquisition (UC2). This is research/enrichment only -- it does NOT
@@ -97,9 +120,9 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
       .map((b) => b.text)
       .join("\n");
 
-    const parsed = JSON.parse(stripFences(textContent || "{}"));
+    const parsed = extractJson(textContent);
 
-    if (parsed.error === "not_found") {
+    if (!parsed || parsed.error === "not_found") {
       return json({ error: "not_found" }, 404);
     }
 

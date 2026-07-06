@@ -17,6 +17,29 @@ function stripFences(text) {
   return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
 }
 
+// Extract a JSON object from the model's text. With web search on, Claude often
+// wraps the JSON in prose or citations, so a plain JSON.parse throws. Try a clean
+// parse first, then fall back to the first {...} block. Returns null on failure
+// (never throws) so the caller can respond gracefully instead of 500-ing.
+function extractJson(text) {
+  if (!text) return null;
+  const stripped = stripFences(text);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(stripped.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 function getSlug(url) {
   try {
     const pathname = new URL(url).pathname;
@@ -107,9 +130,16 @@ Only return {"error":"not_found"} if you found absolutely no information about t
       .map((b) => b.text)
       .join("\n");
 
-    const parsed = JSON.parse(stripFences(textContent || "{}"));
+    const parsed = extractJson(textContent);
 
-    if (parsed.error === "not_found") {
+    // No parseable JSON, an explicit not_found, or every field empty -> treat as
+    // "not found" rather than an error. LinkedIn blocks Google indexing of
+    // profiles, so a web-search lookup often genuinely finds nothing.
+    const hasAnyField =
+      parsed &&
+      (parsed.first_name || parsed.last_name || parsed.title || parsed.company || parsed.location);
+
+    if (!parsed || parsed.error === "not_found" || !hasAnyField) {
       return json({ error: "not_found" }, 404);
     }
 
@@ -129,6 +159,6 @@ Only return {"error":"not_found"} if you found absolutely no information about t
     });
   } catch (err) {
     console.error("fetch-linkedin:", err.message);
-    return json({ error: "Failed to fetch LinkedIn profile" }, 500);
+    return json({ error: "Failed to fetch LinkedIn profile", detail: err.message }, 500);
   }
 }

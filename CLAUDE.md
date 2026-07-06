@@ -634,7 +634,7 @@ Components import `api` and call methods directly. Errors bubble up as exception
 
 ## Hunter Result Filtering & Classification (Frontend)
 
-When `findContacts` returns Hunter's response, classify and rank each contact. EVERY named contact is surfaced -- titles that do not match a known category fall through to "Other" with a low score so they still appear, just ranked below the relevant roles. A contact is only dropped when it has no usable name. (This replaces the earlier drop-everything rule: Pat wants to see all possible contacts in an org from one Search, then pick.) Classification is split into a pure `classifyTitle(title)` helper that returns `{ score, contactType }`, reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
+When `findContacts` returns Hunter's response, classify and rank each contact, then **keep only design-relevant people**. `classifyTitle(title)` is a pure helper returning `{ score, contactType }`; the result mappers **drop any contact classified as "Other"** (finance, sales, engineering, marketing, ops, legal, or no title), as well as any contact with no usable name. This keeps the results to people actually worth reaching out to for design work (a company search used to surface everyone in the org, which was mostly noise). The same `classifyTitle` + Other-drop rule is reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
 
 **Six categories (in priority order):**
 
@@ -645,10 +645,11 @@ When `findContacts` returns Hunter's response, classify and rank each contact. E
 | Recruiter | 70 | Recruit/talent/sourcer titles -- excludes sales, finance, legal, ops recruiters |
 | Informational | 50 | Product manager/lead/director/VP/CPO, design ops, UX research, service/content designer, design engineer |
 | Boss Hunt | 40 | Founder, co-founder, CEO -- fallback for small startups with no design leader |
-| Other | 10 | Everything else (CFO, CTO, VP Sales, marketing, engineering, ops, legal, etc.) and contacts with no title. Still surfaced, ranked last. |
+| Other | 10 | Everything else (CFO, CTO, VP Sales, marketing, engineering, ops, legal, etc.) and contacts with no title. **Dropped from results** (not design-relevant). |
 
 ```js
-// Pure helper: title -> { score, contactType }. Never drops; unmatched -> Other.
+// Pure helper: title -> { score, contactType }. Unmatched -> Other (which the
+// mappers then drop). This helper itself never drops -- it only classifies.
 function classifyTitle(title = "") {
   const designLeader =
     /(design|ux|user\s*experience)/i.test(title) &&
@@ -682,13 +683,17 @@ function classifyTitle(title = "") {
   return { score: 10, contactType: "Other" };
 }
 
-// Hunter record -> unified result. Dropped only when there is no usable name.
+// Hunter record -> unified result. Dropped when there is no usable name OR when
+// the title is not design-relevant (classifyTitle -> "Other").
 function classifyContact(person, targetTitles = []) {
   const fullName = [person.first_name, person.last_name].filter(Boolean).join(" ").trim();
   if (!fullName) return null;
 
   const title = person.position || "";
   let { score, contactType } = classifyTitle(title);
+
+  // Keep only design-relevant contacts; drop the "Other" noise bucket.
+  if (contactType === "Other") return null;
 
   const t = title.toLowerCase();
   targetTitles.forEach(target => {
@@ -707,7 +712,7 @@ function classifyContact(person, targetTitles = []) {
   };
 }
 
-// Then (no slice -- show every named contact, ranked):
+// Then (design-relevant contacts only, ranked; null entries filtered out):
 const scored = (data.data?.emails || [])
   .map(p => classifyContact(p, fit?.search_titles || []))
   .filter(Boolean)
@@ -716,15 +721,15 @@ const scored = (data.data?.emails || [])
 
 LinkedIn results from `/api/search-linkedin` are normalized through the same `classifyTitle` (via a `mapLinkedInResult` helper) and merged into the Hunter list with a `mergeContacts` helper that de-dupes by email, then normalized LinkedIn URL, then lowercased name (the record with an email wins, missing fields backfilled from the other).
 
-**Verification table:**
+**Verification table:** (`classifyTitle` still returns "Other, score 10" for the rows below; the result mappers then drop those, so they do not appear in search results.)
 
 | Title | Expected result |
 |-------|-----------------|
-| "Chief Financial Officer" | Other, score 10 |
-| "VP of Solutions Engineering" | Other, score 10 |
-| "Program Director" | Other, score 10 |
-| "Senior Director of Marketing" | Other, score 10 |
-| "Sales Recruiter" | Other, score 10 |
+| "Chief Financial Officer" | Other, score 10 -> dropped |
+| "VP of Solutions Engineering" | Other, score 10 -> dropped |
+| "Program Director" | Other, score 10 -> dropped |
+| "Senior Director of Marketing" | Other, score 10 -> dropped |
+| "Sales Recruiter" | Other, score 10 -> dropped |
 | "CEO" | Boss Hunt, score 40 |
 | "Senior Technical Recruiter" | Recruiter, score 70 |
 | "Head of Design" | Hiring Manager, score 100 |

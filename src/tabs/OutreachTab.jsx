@@ -58,6 +58,13 @@ function classifyContact(person, targetTitles = []) {
   const title = person.position || "";
   let { score, contactType } = classifyTitle(title);
 
+  // Only surface design-relevant contacts (design leaders, designers, recruiters,
+  // design-adjacent PM/research/ops, and founders). Titles that fall through to
+  // "Other" -- finance, sales, engineering, marketing, ops, legal, or no title at
+  // all -- are dropped rather than shown, so the results are people actually worth
+  // reaching out to for design work.
+  if (contactType === "Other") return null;
+
   const t = title.toLowerCase();
   targetTitles.forEach(target => {
     const keyword = target.toLowerCase().split(" ")[0];
@@ -83,13 +90,17 @@ function mapLinkedInResult(r) {
   if (!name) return null;
 
   const { score, contactType } = classifyTitle(r.title || "");
+  // Prefer the server's contact_type when present; otherwise use ours.
+  const finalType = r.contact_type || contactType;
+  // Same design-relevance filter as Hunter results: drop non-design "Other".
+  if (finalType === "Other") return null;
+
   return {
     name,
     email: "",
     title: r.title || "",
     linkedin: r.linkedin || "",
-    // Prefer the server's contact_type when present; otherwise use ours.
-    contact_type: r.contact_type || contactType,
+    contact_type: finalType,
     snippet: r.snippet || "",
     score,
   };
@@ -423,7 +434,7 @@ export default function OutreachTab() {
             Hidden once a profile has been loaded (the prompt has been fulfilled). */}
         {searchDone && !searching && searchResults.length === 0 && fetchStatus !== "ok" && (
           <div className="notice notice-info" style={{ marginTop: 10 }}>
-            No contacts found for {company || domain}. Add someone by LinkedIn URL below.
+            No design-relevant contacts found for {company || domain}. Add someone by LinkedIn URL below.
           </div>
         )}
 

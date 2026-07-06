@@ -17,6 +17,13 @@ function stripFences(text) {
   return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
 }
 
+// Return the first [...] block in the text, or "" if there is none.
+function sliceArray(text) {
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  return start >= 0 && end > start ? text.slice(start, end + 1) : "";
+}
+
 export default async function handler(request) {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS });
@@ -85,12 +92,18 @@ If no profiles found after searching, return: []`;
       .map((b) => b.text)
       .join("\n");
 
-    let results;
-    try {
-      results = JSON.parse(stripFences(textContent || "[]"));
-      if (!Array.isArray(results)) results = [];
-    } catch {
-      results = [];
+    // With web search on, Claude often wraps the JSON array in prose or
+    // citations, so a plain parse returns nothing. Try a clean parse, then fall
+    // back to the first [...] block. Any failure yields an empty list (this is a
+    // best-effort fallback source, so an empty result is acceptable).
+    let results = [];
+    const stripped = stripFences(textContent || "");
+    for (const candidate of [stripped, sliceArray(stripped)]) {
+      if (!candidate) continue;
+      try {
+        const parsed = JSON.parse(candidate);
+        if (Array.isArray(parsed)) { results = parsed; break; }
+      } catch { /* try next candidate */ }
     }
 
     return json(results);
