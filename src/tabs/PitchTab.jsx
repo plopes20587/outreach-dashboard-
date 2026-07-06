@@ -1,16 +1,38 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { useCopy } from "../hooks/useCopy";
+import { useLinkedInFetch } from "../hooks/useLinkedInFetch";
 import Card from "../components/Card";
 import Field from "../components/Field";
 import Button from "../components/Button";
+import ContactPanel from "../components/ContactPanel";
+import ResearchCard from "../components/ResearchCard";
+import { initContact, applyProfile } from "../lib/contact";
 
 export default function PitchTab() {
+  // Freelance pitch generation (UC3).
   const [posting, setPosting] = useState("");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(false);
   const [copied, copy] = useCopy();
+
+  // Person research (UC2): founders/CEOs sourced from Product Hunt, Crunchbase,
+  // etc. ResearchCard owns its inputs; it reports results up here to populate the
+  // shared contact card and keep the notes/hook for the Draft outreach prompt.
+  const [contact, setContact] = useState(initContact());
+  const [researchData, setResearchData] = useState(null); // { research_notes, hook }
+  // Bumping this key remounts ResearchCard to clear its inputs on Reset.
+  const [researchKey, setResearchKey] = useState(0);
+  const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
+
+  function handleResearchResult(data, resolvedLinkedin) {
+    setContact((c) => ({
+      ...applyProfile(c, data),
+      linkedin: resolvedLinkedin || c.linkedin,
+    }));
+    setResearchData({ research_notes: data.research_notes, hook: data.hook });
+  }
 
   async function handleGenerate() {
     if (!posting.trim()) return;
@@ -35,6 +57,26 @@ export default function PitchTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* Research a person (founders/CEOs from Product Hunt, Crunchbase, etc.) */}
+      <ResearchCard key={researchKey} onResult={handleResearchResult} />
+
+      {/* Shared contact card. Fed by research above; its notes + hook feed the
+          Draft outreach prompt. Reset clears the results and remounts ResearchCard
+          (via researchKey) to clear its inputs too. */}
+      <ContactPanel
+        contact={contact}
+        setContact={setContact}
+        research={researchData}
+        fetching={fetching}
+        fetchStatus={fetchStatus}
+        setFetchStatus={setFetchStatus}
+        onFetchLinkedIn={fetchLinkedIn}
+        onReset={() => {
+          setResearchData(null);
+          setResearchKey((k) => k + 1);
+        }}
+      />
 
       {/* Posting input */}
       <Card title="Freelance posting">

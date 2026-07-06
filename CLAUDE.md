@@ -91,6 +91,7 @@ outreach-app/
 │   ├── lib/
 │   │   ├── profile.js            # PAT_PROFILE constant
 │   │   ├── api.js                # Frontend wrappers for /api/* endpoints
+│   │   ├── contact.js            # initContact() blank-contact factory + applyProfile() field merge (shared)
 │   │   └── notion-schema.js      # Notion data source ID and field mappings
 │   ├── components/
 │   │   ├── Tabs.jsx              # Top tab bar
@@ -99,13 +100,16 @@ outreach-app/
 │   │   ├── Button.jsx            # Variants: default, blue, green, purple, coral
 │   │   ├── Badge.jsx             # Status pills (green/amber/red/blue/neutral)
 │   │   ├── ContactCard.jsx       # Selectable contact result card
+│   │   ├── ContactPanel.jsx      # Shared always-visible Contact card + Notion/Draft outreach; LinkedIn fetch status comes in via props
+│   │   ├── ResearchCard.jsx      # Self-contained "Research a person" card (UC2); reports results via onResult, reset by key remount
 │   │   ├── PromptBox.jsx         # Copy-to-clipboard prompt display
 │   │   └── FitBar.jsx            # Score bar with color coding
 │   ├── tabs/
-│   │   ├── OutreachTab.jsx       # Outreach flow: job-based (UC1) + founder research (UC2) → contact + outreach handoff
-│   │   └── PitchTab.jsx          # Freelance pitch flow (UC3): Contra/Upwork posting → pitch, no contact saved
+│   │   ├── OutreachTab.jsx       # Job-based outreach (UC1): JD fit → find contacts → shared ContactPanel → outreach handoff
+│   │   └── PitchTab.jsx          # Freelance flow: ResearchCard (UC2) → shared ContactPanel, and Contra/Upwork posting → pitch (UC3)
 │   └── hooks/
-│       └── useCopy.js            # Hook for clipboard copy with copied state
+│       ├── useCopy.js            # Hook for clipboard copy with copied state
+│       └── useLinkedInFetch.js   # Hook owning one LinkedIn fetch + fetching/fetchStatus, shared by every fetch trigger
 ├── .env.example                  # Documents required env vars (no real values)
 ├── .gitignore                    # node_modules, .env, dist
 ├── package.json
@@ -218,15 +222,18 @@ Sticky bar at top inside a `var(--bg-1)` rounded container with 6px padding. Eac
 
 ---
 
-## Tab 1: Outreach Flow
+## Tab 1: Outreach Flow (UC1, job-based)
 
-This tab handles two entry points that converge on the same Contact card + outreach handoff:
+This tab handles the job-based entry point:
 - **UC1 (job-based):** paste a JD → fit analysis → find contacts (Hunter/LinkedIn) → contact card.
-- **UC2 (person-based, freelance acquisition):** research a founder/CEO by URL or name+company (`/api/research-person`) → contact card.
 
-The JD analysis, Find contacts, and Research a person sections are collapsible **optional** panels (no numbered steps); the Contact card is always visible. The "Draft outreach" button still does NOT call an LLM (Hard Rule #9) -- it builds an enriched prompt (fit summary, research notes + hook, contact/lead type, and a suggested reference template) and copies it to the clipboard for Pat's Claude.ai outreach-composer skill.
+(Person research — UC2 — lives on the Freelance Pitch tab, since Pat only researches founders/CEOs for freelance acquisition. See Tab 2.)
+
+The JD analysis and Find contacts sections are collapsible **optional** panels (no numbered steps); the Contact card (the shared `ContactPanel` component) is always visible. The "Draft outreach" button still does NOT call an LLM (Hard Rule #9) -- it builds an enriched prompt (fit summary, contact/lead type, and a suggested reference template) and copies it to the clipboard for Pat's Claude.ai outreach-composer skill.
 
 ### State (in `OutreachTab.jsx`)
+
+The Contact card's own state (`pushing`, `notionStatus`, `outreachPrompt`) lives inside the shared `ContactPanel` component. The LinkedIn fetch + its `fetching`/`fetchStatus` badge state come from the `useLinkedInFetch(setContact)` hook, owned by the tab and passed into `ContactPanel` so the badge fires for search-select, manual URL, and the card's own field alike. `OutreachTab` keeps the search/analysis state and lifts `contact`/`setContact`, passing them plus `fit` into `<ContactPanel>`.
 
 ```js
 const [jd, setJd] = useState("");
@@ -235,7 +242,6 @@ const [fit, setFit] = useState(null);  // { fit_score, company, industry, indust
 const [company, setCompany] = useState("");
 const [domain, setDomain] = useState("");
 const [searching, setSearching] = useState(false);    // LinkedIn fallback
-const [hunterSearching, setHunterSearching] = useState(false);
 const [searchResults, setSearchResults] = useState([]);
 const [searchDone, setSearchDone] = useState(false);
 const [hunterError, setHunterError] = useState(null);
@@ -243,14 +249,10 @@ const [selIdx, setSelIdx] = useState(null);
 const [showManual, setShowManual] = useState(false);
 const [manualUrl, setManualUrl] = useState("");
 const [contact, setContact] = useState(initContact());
-const [pushing, setPushing] = useState(false);
-const [notionStatus, setNotionStatus] = useState(null);
-const [outreachPrompt, setOutreachPrompt] = useState(null);
-const [fetching, setFetching] = useState(false);  // LinkedIn profile fetch
-const [fetchStatus, setFetchStatus] = useState(null);  // "ok" | "error" | null
+const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 ```
 
-`initContact()` returns:
+`initContact()` (exported from `ContactPanel.jsx`) returns:
 
 ```js
 { name: "", company: "", title: "", location: "", email: "", linkedin: "",
@@ -293,14 +295,17 @@ Visible only after analyze succeeds.
   - Contact type pill if present (neutral tag)
   - "Selected" indicator on right when active
 - Click anywhere on the card to select. If it has a LinkedIn URL with `linkedin.com/in/`, also trigger `/api/fetch-linkedin` to enrich data. Always populate name, title, email, linkedin, contact type, and company from the result.
-- Below results: "None of these — enter a LinkedIn URL manually" toggle button.
+- Below results: "None of these — add a LinkedIn URL manually" toggle button.
+
+**Feedback grouping (UX):** every message this action can produce renders **inside the Find contacts card**, so it is always clear which action caused it (this mirrors how the Analyze card shows its fit results inline). That means: the Hunter error, the search results, the empty state, and the manual look-up feedback all live in this one card — no floating notices between cards. The empty state ("No contacts found for X. Add someone by LinkedIn URL below.") uses the neutral `notice-info` style, not `notice-error`, because "no results" is a normal outcome, not a failure. It is hidden once a profile has been loaded (`fetchStatus === "ok"`), and `fetchStatus` is cleared at the start of each new Search.
 
 ### Manual LinkedIn URL Entry
 
-Visible when toggled on, or automatically when no search results found.
+Rendered inside the Find contacts card. Visible when the "add a LinkedIn URL manually" toggle is on, or automatically when a search returns no results.
 
-- Single input + green "Fetch profile" button
-- On click: calls `/api/fetch-linkedin` with the URL
+- Single input + green "Look up profile" button (label "Looking up..." while pending)
+- On click: calls `/api/fetch-linkedin` with the URL via the shared `useLinkedInFetch` hook
+- Its own success/error notice appears right below it ("Profile loaded into the contact below." / "Couldn't load that profile...")
 - Result populates the contact profile fields below
 
 ### Step 3: Contact Profile
@@ -361,18 +366,39 @@ This makes the handoff between tools explicit in the UI so Pat doesn't lose the 
 
 ---
 
-## Tab 2: Freelance Pitch Flow (UC3)
+## Tab 2: Freelance Flow (UC2 person research + UC3 pitch)
 
-Generates a tailored pitch for a freelance posting (Contra, Upwork, or similar). No contact is saved. Independent state from the Outreach tab. No shared context.
+This tab serves Pat's freelance acquisition. It hosts two independent workflows, top to bottom:
+
+- **UC2 (person research):** research a founder/CEO by URL or name+company (`/api/research-person`) → the shared `ContactPanel` contact card. Research notes + hook feed the "Draft outreach" clipboard prompt (Hard Rule #9 preserved — no LLM writes the message here). The contact can be pushed to Notion.
+- **UC3 (pitch):** paste a freelance posting (Contra, Upwork, or similar) → generate a tailored pitch end-to-end. No contact is saved for this workflow.
+
+Independent state from the Outreach tab (no shared runtime context; only the `ContactPanel` UI is shared).
 
 ### State
 
 ```js
+// UC3 pitch
 const [posting, setPosting] = useState("");
 const [generating, setGenerating] = useState(false);
 const [result, setResult] = useState(null);  // { message, notes }
 const [error, setError] = useState(false);
+
+// UC2 person research (populates the shared ContactPanel)
+const [contact, setContact] = useState(initContact());
+const [researchData, setResearchData] = useState(null);  // { research_notes, hook }
+const [researchKey, setResearchKey] = useState(0);        // bump to remount ResearchCard on Reset
+const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 ```
+
+The research inputs (mode, URL, name, company, loading, error) live inside `ResearchCard`, not the tab.
+
+### Research a person (UC2)
+
+- Rendered as `<ResearchCard key={researchKey} onResult={handleResearchResult} />` at the top of the tab.
+- `ResearchCard` is a plain titled `Card` (not collapsible). Mode toggle: `By URL` / `By name + company`. URL mode is a single input (Product Hunt, Crunchbase, site, or LinkedIn); name mode is a two-column name + company grid.
+- `Research person` button (green) calls `/api/research-person`. On success `ResearchCard` renders the notes + hook and calls `onResult(data, resolvedLinkedin)`; the tab's `handleResearchResult` merges the profile into the contact via `applyProfile` (plus the resolved LinkedIn URL) and stores `{ research_notes, hook }` in `researchData`.
+- Below it, render `<ContactPanel contact={contact} setContact={setContact} research={researchData} fetching={fetching} fetchStatus={fetchStatus} setFetchStatus={setFetchStatus} onFetchLinkedIn={fetchLinkedIn} onReset={() => { setResearchData(null); setResearchKey((k) => k + 1); }} />`. Reset clears the results and remounts `ResearchCard` (via `researchKey`) so its inputs clear too.
 
 ### Step 1: Posting Input
 

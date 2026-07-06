@@ -6,15 +6,9 @@ import Button from "../components/Button";
 import Badge from "../components/Badge";
 import FitBar from "../components/FitBar";
 import ContactCard from "../components/ContactCard";
-import PromptBox from "../components/PromptBox";
-
-function initContact() {
-  return {
-    name: "", company: "", title: "", location: "",
-    email: "", linkedin: "", contactType: "", leadType: "",
-    status: "Did not send",
-  };
-}
+import ContactPanel from "../components/ContactPanel";
+import { initContact } from "../lib/contact";
+import { useLinkedInFetch } from "../hooks/useLinkedInFetch";
 
 // Maps a job title to a relevance score + category. This is the ranking brain
 // for the contact search. It NEVER drops a title -- anything that does not match
@@ -134,59 +128,6 @@ function mergeContacts(primary, secondary) {
   return [...byKey.values()];
 }
 
-// Suggest which Claude.ai reference template the outreach-composer skill should
-// lean on, based on contact type first, then lead temperature.
-function suggestTemplate(contact) {
-  if (contact.contactType === "Boss Hunt")     return "Boss Hunting Playbook";
-  if (contact.contactType === "Informational") return "Informational Interview";
-  if (contact.leadType === "Warm" || contact.leadType === "Warm-ish") {
-    return "Warm Outreach Strategy";
-  }
-  return "Cold Outreach Strategy";
-}
-
-// Builds the structured prompt that Pat copies into his Claude.ai project, where
-// the outreach-composer skill + reference templates actually write the message.
-// This app intentionally does NOT generate the message itself (CLAUDE.md Hard
-// Rule #9). `fit` is present for job-based contacts (UC1); `research` is present
-// for researched founders/CEOs (UC2). Both are optional.
-function buildOutreachPrompt(contact, fit, research) {
-  const lines = [];
-
-  let opener = `Draft an outreach message for ${contact.name || "this contact"}`;
-  if (contact.title)   opener += `, ${contact.title}`;
-  if (contact.company) opener += ` at ${contact.company}`;
-  opener += ".";
-  lines.push(opener);
-
-  if (contact.contactType) lines.push(`Contact type: ${contact.contactType}.`);
-  if (contact.leadType)    lines.push(`Lead type: ${contact.leadType}.`);
-  if (contact.location)    lines.push(`Location: ${contact.location}.`);
-  if (contact.linkedin)    lines.push(`LinkedIn: ${contact.linkedin}.`);
-
-  if (fit?.summary) {
-    lines.push("", `Fit context (from the job description): ${fit.summary}`);
-    if (fit.strengths?.length) {
-      lines.push(`Why it fits: ${fit.strengths.join("; ")}.`);
-    }
-  }
-
-  if (research?.research_notes) {
-    lines.push("", `Research on this person: ${research.research_notes}`);
-  }
-  if (research?.hook) {
-    lines.push(`Specific hook to open with: ${research.hook}`);
-  }
-
-  lines.push(
-    "",
-    `Suggested template: ${suggestTemplate(contact)}.`,
-    "Use my outreach-composer skill and the suggested reference template to write the message.",
-  );
-
-  return lines.join("\n");
-}
-
 const FIT_BADGE = { strong: "green", moderate: "amber", mismatch: "red" };
 
 export default function OutreachTab() {
@@ -205,60 +146,14 @@ export default function OutreachTab() {
   const [showManual, setShowManual] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
   const [contact, setContact] = useState(initContact());
-  const [pushing, setPushing] = useState(false);
-  const [notionStatus, setNotionStatus] = useState(null);
-  const [outreachPrompt, setOutreachPrompt] = useState(null);
-  const [fetching, setFetching] = useState(false);
-  const [fetchStatus, setFetchStatus] = useState(null);
+  // One LinkedIn fetch shared by search-select, manual URL, and the contact
+  // card's own field, so the "Fetching / Profile loaded" badge fires for all.
+  const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
   // Open/closed state for the two optional helper panels. Both start collapsed
-  // so the always-visible Contact card is the immediate focus -- the right
-  // default for logging a freelance lead (CEO/founder from Crunchbase, Product
-  // Hunt, etc.) where there is no job description. To make the JD-first flow
-  // open by default instead, change these initial values to `true`.
+  // so the always-visible Contact card is the immediate focus. To make the
+  // JD-first flow open by default instead, change these initial values to `true`.
   const [jdOpen, setJdOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
-  // "Research a person" panel (UC2: founders/CEOs from Product Hunt, Crunchbase).
-  const [researchOpen, setResearchOpen] = useState(false);
-  const [researchMode, setResearchMode] = useState("url"); // "url" | "name"
-  const [researchUrl, setResearchUrl] = useState("");
-  const [researchName, setResearchName] = useState("");
-  const [researchCompany, setResearchCompany] = useState("");
-  const [researching, setResearching] = useState(false);
-  const [researchData, setResearchData] = useState(null); // { research_notes, hook }
-  const [researchError, setResearchError] = useState(null);
-
-  async function handleResearch() {
-    const payload =
-      researchMode === "url"
-        ? { url: researchUrl.trim() }
-        : { name: researchName.trim(), company: researchCompany.trim() };
-    if (researchMode === "url" ? !payload.url : !payload.name) return;
-
-    setResearching(true);
-    setResearchError(null);
-    try {
-      const data = await api.researchPerson(payload);
-      setContact((c) => ({
-        ...c,
-        name:     data.name     || c.name,
-        title:    data.title    || c.title,
-        company:  data.company  || c.company,
-        location: data.location || c.location,
-        linkedin: researchMode === "url" && researchUrl.includes("linkedin.com/in/")
-          ? researchUrl.trim()
-          : c.linkedin,
-      }));
-      setResearchData({ research_notes: data.research_notes, hook: data.hook });
-    } catch (err) {
-      setResearchError(
-        err.message === "not_found"
-          ? "Could not find this person. Try a different URL or add a company."
-          : err.message || "Research failed.",
-      );
-    } finally {
-      setResearching(false);
-    }
-  }
 
   async function handleAnalyze() {
     if (!jd.trim()) return;
@@ -309,6 +204,7 @@ export default function OutreachTab() {
     setSearchDone(false);
     setSelIdx(null);
     setSearchResults([]);
+    setFetchStatus(null); // clear any stale manual look-up feedback for the new search
 
     const sortByScore = (list) => [...list].sort((a, b) => b.score - a.score);
     let merged = [];
@@ -354,27 +250,6 @@ export default function OutreachTab() {
     setSearching(false);
   }
 
-  async function handleFetchLinkedIn(url) {
-    if (!url || !url.includes("linkedin.com/in/")) return;
-    setFetching(true);
-    setFetchStatus(null);
-    try {
-      const data = await api.fetchLinkedIn(url);
-      setContact((c) => ({
-        ...c,
-        name:     data.name     || c.name,
-        title:    data.title    || c.title,
-        company:  data.company  || c.company,
-        location: data.location || c.location,
-      }));
-      setFetchStatus("ok");
-    } catch {
-      setFetchStatus("error");
-    } finally {
-      setFetching(false);
-    }
-  }
-
   async function handleSelectResult(idx) {
     const result = searchResults[idx];
     setSelIdx(idx);
@@ -388,48 +263,15 @@ export default function OutreachTab() {
       company:     company             || c.company,
     }));
     if (result.linkedin && result.linkedin.includes("linkedin.com/in/")) {
-      await handleFetchLinkedIn(result.linkedin);
+      await fetchLinkedIn(result.linkedin);
     }
   }
 
   async function handleFetchManual() {
     if (!manualUrl.trim()) return;
     setContact((c) => ({ ...c, linkedin: manualUrl }));
-    await handleFetchLinkedIn(manualUrl);
+    await fetchLinkedIn(manualUrl);
   }
-
-  async function handlePushNotion() {
-    setPushing(true);
-    setNotionStatus(null);
-    try {
-      await api.pushNotion(contact);
-      setNotionStatus("ok");
-    } catch (err) {
-      console.error("pushNotion:", err.message);
-      setNotionStatus(err.message || "error");
-    } finally {
-      setPushing(false);
-    }
-  }
-
-  function handleDraftOutreach() {
-    setOutreachPrompt(buildOutreachPrompt(contact, fit, researchData));
-  }
-
-  function handleReset() {
-    setContact(initContact());
-    setSelIdx(null);
-    setOutreachPrompt(null);
-    setNotionStatus(null);
-    setFetchStatus(null);
-    setResearchData(null);
-  }
-
-  const fetchBadge =
-    fetching                ? <Badge variant="amber">Fetching...</Badge> :
-    fetchStatus === "ok"    ? <Badge variant="green">Profile loaded</Badge> :
-    fetchStatus === "error" ? <Badge variant="red">Could not load -- fill in manually</Badge> :
-    null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -500,7 +342,11 @@ export default function OutreachTab() {
         )}
       </Card>
 
-      {/* Optional helper: find contacts (works with or without a JD) */}
+      {/* Optional helper: find contacts (works with or without a JD). Everything
+          this action produces -- results, the empty state, and the manual URL
+          fallback (with its own feedback) -- lives inside this card so it is
+          always clear which action caused a given message. This mirrors how the
+          Analyze card shows its fit results inline. */}
       <Card
         title="Find contacts"
         optional
@@ -533,299 +379,101 @@ export default function OutreachTab() {
             {searching ? "Searching..." : "Search"}
           </Button>
         </div>
+
+        {/* Error from the Hunter.io search itself */}
         {hunterError && (
           <div className="notice notice-error" style={{ marginTop: 10 }}>
             {hunterError}
           </div>
         )}
-      </Card>
 
-      {/* Optional helper: research a person (founders/CEOs from Product Hunt, Crunchbase) */}
-      <Card
-        title="Research a person"
-        optional
-        collapsible
-        open={researchOpen}
-        onToggle={setResearchOpen}
-      >
-        <div className="btn-row" style={{ marginBottom: 10 }}>
-          <Button
-            variant={researchMode === "url" ? "blue" : "default"}
-            onClick={() => setResearchMode("url")}
-          >
-            By URL
-          </Button>
-          <Button
-            variant={researchMode === "name" ? "blue" : "default"}
-            onClick={() => setResearchMode("name")}
-          >
-            By name + company
-          </Button>
-        </div>
-
-        {researchMode === "url" ? (
-          <Field label="Profile or company URL (Product Hunt, Crunchbase, site, LinkedIn)">
-            <input
-              value={researchUrl}
-              onChange={(e) => setResearchUrl(e.target.value)}
-              placeholder="https://www.producthunt.com/@... or company site"
-            />
-          </Field>
-        ) : (
-          <div className="grid-2">
-            <Field label="Name">
-              <input
-                value={researchName}
-                onChange={(e) => setResearchName(e.target.value)}
-                placeholder="First Last"
-              />
-            </Field>
-            <Field label="Company">
-              <input
-                value={researchCompany}
-                onChange={(e) => setResearchCompany(e.target.value)}
-                placeholder="Acme Corp"
-              />
-            </Field>
-          </div>
-        )}
-
-        <div className="btn-row" style={{ marginTop: 10 }}>
-          <Button
-            variant="green"
-            onClick={handleResearch}
-            disabled={
-              researching ||
-              (researchMode === "url" ? !researchUrl.trim() : !researchName.trim())
-            }
-          >
-            {researching ? "Researching..." : "Research person"}
-          </Button>
-        </div>
-
-        {researchError && (
-          <div className="notice notice-error" style={{ marginTop: 10 }}>
-            {researchError}
-          </div>
-        )}
-
-        {researchData && (researchData.research_notes || researchData.hook) && (
+        {/* Search results */}
+        {searchDone && searchResults.length > 0 && (
           <>
             <div className="divider" />
-            {researchData.research_notes && (
-              <div className="fit-group">
-                <div className="fit-group-label">Research notes</div>
-                <div className="summary-box">{researchData.research_notes}</div>
+            <div className="results-header">
+              {searchResults.length} contact(s) found -- select one to populate the profile below
+            </div>
+            {linkedinLoading && (
+              <div className="results-header" style={{ opacity: 0.6 }}>
+                Also checking LinkedIn...
               </div>
             )}
-            {researchData.hook && (
-              <div className="fit-group fit-group-strengths">
-                <div className="fit-group-label">Outreach hook</div>
-                <div className="summary-box">{researchData.hook}</div>
+            <div className="results-list">
+              {searchResults.map((r, i) => (
+                <ContactCard
+                  key={i}
+                  contact={r}
+                  selected={selIdx === i}
+                  onSelect={() => handleSelectResult(i)}
+                />
+              ))}
+            </div>
+            {!showManual && (
+              <div style={{ marginTop: 8 }}>
+                <Button variant="default" onClick={() => setShowManual(true)}>
+                  None of these -- add a LinkedIn URL manually
+                </Button>
               </div>
             )}
           </>
         )}
-      </Card>
 
-      {/* Search results */}
-      {searchDone && searchResults.length > 0 && (
-        <div>
-          <div className="results-header">
-            {searchResults.length} contact(s) found -- select one to populate the profile below
-          </div>
-          {linkedinLoading && (
-            <div className="results-header" style={{ opacity: 0.6 }}>
-              Also checking LinkedIn...
-            </div>
-          )}
-          <div className="results-list">
-            {searchResults.map((r, i) => (
-              <ContactCard
-                key={i}
-                contact={r}
-                selected={selIdx === i}
-                onSelect={() => handleSelectResult(i)}
-              />
-            ))}
-          </div>
-          {!showManual && (
-            <div style={{ marginTop: 8 }}>
-              <Button variant="default" onClick={() => setShowManual(true)}>
-                None of these -- enter a LinkedIn URL manually
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Empty state notice */}
-      {searchDone && !searching && searchResults.length === 0 && !showManual && (
-        <div className="notice notice-error">
-          No contacts found for {company || domain}. Try the manual URL entry below.
-        </div>
-      )}
-
-      {/* Manual LinkedIn URL entry */}
-      {(showManual || (searchDone && searchResults.length === 0)) && (
-        <Card>
-          <Field label="LinkedIn URL">
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                value={manualUrl}
-                onChange={(e) => setManualUrl(e.target.value)}
-                placeholder="https://linkedin.com/in/..."
-              />
-              <Button
-                variant="green"
-                onClick={handleFetchManual}
-                disabled={fetching || !manualUrl.trim()}
-                style={{ flexShrink: 0 }}
-              >
-                {fetching ? "Fetching..." : "Fetch profile"}
-              </Button>
-            </div>
-          </Field>
-        </Card>
-      )}
-
-      {/* Always-visible core: the contact card itself */}
-      <Card title="Contact">
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="grid-2">
-            <Field label="Contact name *">
-              <input
-                value={contact.name}
-                onChange={(e) => setContact((c) => ({ ...c, name: e.target.value }))}
-                placeholder="First Last"
-              />
-            </Field>
-            <Field label="Company *">
-              <input
-                value={contact.company}
-                onChange={(e) => setContact((c) => ({ ...c, company: e.target.value }))}
-                placeholder="Acme Corp"
-              />
-            </Field>
-          </div>
-          <div className="grid-2">
-            <Field label="Title">
-              <input
-                value={contact.title}
-                onChange={(e) => setContact((c) => ({ ...c, title: e.target.value }))}
-                placeholder="Head of Design"
-              />
-            </Field>
-            <Field label="Location">
-              <input
-                value={contact.location}
-                onChange={(e) => setContact((c) => ({ ...c, location: e.target.value }))}
-                placeholder="New York, NY"
-              />
-            </Field>
-          </div>
-          <div className="grid-2">
-            <Field label="Email (from Hunter.io)">
-              <input
-                value={contact.email}
-                onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
-                placeholder="name@company.com"
-              />
-            </Field>
-            <Field label="LinkedIn URL -- paste and press Enter to auto-fill" badge={fetchBadge}>
-              <input
-                value={contact.linkedin}
-                onChange={(e) => {
-                  setContact((c) => ({ ...c, linkedin: e.target.value }));
-                  if (!e.target.value) setFetchStatus(null);
-                }}
-                onBlur={(e) => handleFetchLinkedIn(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleFetchLinkedIn(contact.linkedin);
-                  }
-                }}
-                placeholder="https://linkedin.com/in/..."
-              />
-            </Field>
-          </div>
-          <div className="grid-3">
-            <Field label="Contact type">
-              <select
-                value={contact.contactType}
-                onChange={(e) => setContact((c) => ({ ...c, contactType: e.target.value }))}
-              >
-                <option value="">Select...</option>
-                <option>Hiring Manager</option>
-                <option>Boss Hunt</option>
-                <option>Recruiter</option>
-                <option>Referral</option>
-                <option>Informational</option>
-                <option>Freelance/Client</option>
-              </select>
-            </Field>
-            <Field label="Lead type">
-              <select
-                value={contact.leadType}
-                onChange={(e) => setContact((c) => ({ ...c, leadType: e.target.value }))}
-              >
-                <option value="">Select...</option>
-                <option>Cold</option>
-                <option>Warm-ish</option>
-                <option>Warm</option>
-              </select>
-            </Field>
-            <Field label="Status">
-              <select
-                value={contact.status}
-                onChange={(e) => setContact((c) => ({ ...c, status: e.target.value }))}
-              >
-                <option>Did not send</option>
-                <option>Email Sent</option>
-                <option>Follow-up Sent</option>
-                <option>Responded</option>
-                <option>No response</option>
-              </select>
-            </Field>
-          </div>
-        </div>
-
-        <div className="divider" />
-
-        <div className="btn-row">
-          <Button
-            variant="green"
-            onClick={handlePushNotion}
-            disabled={pushing || !contact.name.trim() || !contact.company.trim()}
-          >
-            {pushing ? "Pushing..." : "Push to Notion"}
-          </Button>
-          <Button variant="purple" onClick={handleDraftOutreach}>
-            Draft outreach
-          </Button>
-          <Button variant="default" onClick={handleReset}>
-            Reset
-          </Button>
-        </div>
-
-        {notionStatus === "ok" && (
-          <div className="notice notice-success" style={{ marginTop: 10 }}>
-            Contact pushed to Notion.
-          </div>
-        )}
-        {notionStatus && notionStatus !== "ok" && (
-          <div className="notice notice-error" style={{ marginTop: 10 }}>
-            {notionStatus}
+        {/* Empty state: a normal search outcome, not an error -- neutral styling.
+            Hidden once a profile has been loaded (the prompt has been fulfilled). */}
+        {searchDone && !searching && searchResults.length === 0 && fetchStatus !== "ok" && (
+          <div className="notice notice-info" style={{ marginTop: 10 }}>
+            No contacts found for {company || domain}. Add someone by LinkedIn URL below.
           </div>
         )}
 
-        {outreachPrompt && (
-          <div style={{ marginTop: 14 }}>
-            <PromptBox text={outreachPrompt} />
+        {/* Manual LinkedIn URL entry (fallback when search misses or is skipped),
+            with its own success/error feedback grouped right here. */}
+        {(showManual || (searchDone && searchResults.length === 0)) && (
+          <div style={{ marginTop: 12 }}>
+            <Field label="Add a contact by LinkedIn URL">
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={manualUrl}
+                  onChange={(e) => setManualUrl(e.target.value)}
+                  placeholder="https://linkedin.com/in/..."
+                />
+                <Button
+                  variant="green"
+                  onClick={handleFetchManual}
+                  disabled={fetching || !manualUrl.trim()}
+                  style={{ flexShrink: 0 }}
+                >
+                  {fetching ? "Looking up..." : "Look up profile"}
+                </Button>
+              </div>
+            </Field>
+            {fetchStatus === "ok" && (
+              <div className="notice notice-success" style={{ marginTop: 10 }}>
+                Profile loaded into the contact below.
+              </div>
+            )}
+            {fetchStatus === "error" && (
+              <div className="notice notice-error" style={{ marginTop: 10 }}>
+                Couldn't load that profile. Check the URL, or fill in the contact fields below.
+              </div>
+            )}
           </div>
         )}
       </Card>
+
+      {/* Always-visible core: the shared contact card. Fed by the search flow
+          above; `fit` supplies job context to the Draft outreach prompt. */}
+      <ContactPanel
+        contact={contact}
+        setContact={setContact}
+        fit={fit}
+        fetching={fetching}
+        fetchStatus={fetchStatus}
+        setFetchStatus={setFetchStatus}
+        onFetchLinkedIn={fetchLinkedIn}
+        onReset={() => setSelIdx(null)}
+      />
 
     </div>
   );
