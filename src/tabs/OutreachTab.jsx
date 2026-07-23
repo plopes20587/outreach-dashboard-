@@ -140,6 +140,7 @@ function mergeContacts(primary, secondary) {
 }
 
 const FIT_BADGE = { strong: "green", moderate: "amber", mismatch: "red" };
+const FIT_LABEL = { strong: "Primary", moderate: "Secondary", mismatch: "Mismatch" };
 
 export default function OutreachTab() {
   const [jd, setJd] = useState("");
@@ -328,7 +329,7 @@ export default function OutreachTab() {
             <FitBar score={fit.fit_score} />
             <div className="tags-row">
               <Badge variant={FIT_BADGE[fit.industry_fit] || "neutral"}>
-                {fit.industry} -- {fit.industry_fit}
+                {fit.industry} -- {FIT_LABEL[fit.industry_fit] || fit.industry_fit}
               </Badge>
               <Badge variant="blue">{fit.role_level}</Badge>
             </div>

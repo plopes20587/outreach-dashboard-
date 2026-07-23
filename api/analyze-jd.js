@@ -47,6 +47,28 @@ Evaluate this job description for Pat.
 Job description:
 ${jd}
 
+Industry fit scoring:
+Primary targets (score strong): travel, gaming, entertainment, e-commerce
+Secondary targets (score moderate): AI, fintech
+Adjacent consumer-facing (score moderate): food/QSR, media, music streaming, retail, sports
+Explicit mismatches (score low, flag): telecom, B2B SaaS, insurance, ad-driven business models, EdTech, healthcare, climate/energy tech
+
+Travel includes: travel booking, hospitality, tourism, experiences, maps/navigation, trip planning
+Gaming includes: video game studios, game platforms, esports, gaming peripherals, game streaming
+Entertainment includes: streaming platforms, film/TV studios, music platforms, live events, sports entertainment
+E-commerce includes: DTC brands, marketplaces, retail platforms, shopping tools, commerce infrastructure
+
+Company size is NOT a disqualifier. Large companies (Google, Netflix, Spotify, Amazon, Meta, Blizzard) are valid targets. The actual disqualifier is bureaucracy that slows shipping combined with design having no strategic voice. Look for signals of this in the JD, not company size. Do NOT flag a role just because the company is large or well-known.
+
+Valid flag examples (use where applicable):
+- "Travel industry -- primary target"
+- "Gaming industry -- primary target"
+- "B2B SaaS -- explicit mismatch"
+- "Telecom -- explicit mismatch, Pat's current industry"
+- "Design appears executional -- no strategic involvement signals"
+- "Large company, no design influence signals"
+- "Agency model -- deliverable-focused, not product-focused" / "Agency model -- confirm product vs campaign focus before applying"
+
 Respond ONLY with valid JSON, no markdown:
 {"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strengths":["<specific reason Pat is a strong match — cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch — be concrete, not generic>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
 
