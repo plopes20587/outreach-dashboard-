@@ -421,6 +421,12 @@ a:hover {
   background: var(--amber-bg);
   border-left-color: var(--amber-bd);
 }
+/* Red flags read as more severe than watch-outs: a gap is something to address
+   in the pitch, a red flag is a reason to walk away. */
+.fit-group-flags {
+  background: var(--red-bg);
+  border-left-color: var(--red-bd);
+}
 .fit-group-label {
   font-size: 11px;
   font-weight: 600;

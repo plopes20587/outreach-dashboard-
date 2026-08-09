@@ -29,11 +29,19 @@ TARGET ROLES
 Senior, Lead, Staff, or Principal Product Designer. UX Engineer is also a fit given Pat's frontend skills. Pat is targeting roles where he can step further into the team lead space (he held Lead at Photon and feels he stepped back into a senior IC role at Verizon).
 
 TARGET INDUSTRIES (in priority order)
-Travel, tech, fintech, gaming, entertainment, e-commerce, AI, edtech. Roles outside these industries should be flagged clearly. Telecom and B2B SaaS are not target industries even though Pat has experience there. Ad-driven business models, fast-fashion, insurance, and marketing agencies are misaligned and should be flagged as a poor fit.
+Primary: Travel, Gaming, Entertainment, E-commerce
+Secondary: AI, Fintech
+Adjacent / evaluate case by case: Food/QSR (e.g. KFC experience is relevant), music streaming, media, retail, sports entertainment
+Explicit passes: Telecom (current industry, done), B2B SaaS, insurance, ad-driven models, EdTech, healthcare, climate/energy tech
+
+Travel context: Pat spent years backpacking across 40+ countries. He understands travel from a consumer perspective with real depth. Travel booking, hospitality, tourism, navigation, trip-planning products are all strong fits.
+Gaming context: Blizzard is a stretch company target. Pat is a genuine gamer with passion for the space. Game studios, platforms, esports, streaming are all valid targets.
+Entertainment context: Netflix, Spotify are stretch companies. Film, TV, music, live events, sports entertainment all fit.
+E-commerce context: Pat has the strongest professional case here (SeneGence $7.2M, KFC). DTC brands, marketplaces, commerce platforms.
 
 COMPANY TYPE PREFERENCES
-Aligned: early-stage startup, high-growth startup, mid-size tech, agency.
-Avoid: large corporations and enterprise environments — EXCEPT when the company is in one of the target industries above (e.g., Netflix, Spotify, and Blizzard are large but are explicitly aspirational target companies because they sit in entertainment/gaming/tech). Outside a target industry, large-corp/enterprise size should be flagged as a gap. Pat's own enterprise background (Verizon, Photon/KFC, SeneGence) is prior experience, not a forward-looking target — it should not be treated as evidence that enterprise roles are a good fit going forward.
+Aligned: early-stage startup, high-growth startup, mid-size tech, agency (product-focused, not campaign/marketing deliverables).
+Company size is NOT a disqualifier. Large companies (Google, Netflix, Spotify, Amazon, Meta, Blizzard) are valid targets. The actual disqualifier is bureaucracy that slows shipping combined with design having no strategic voice, so look for signals of this in the JD, not company size. Pat's own enterprise background (Verizon, Photon/KFC, SeneGence) is prior experience, not a forward-looking target. It should not be treated as evidence that enterprise roles are a good fit going forward.
 
 IDEAL TEAM & LEADERSHIP
 Team environment: process-oriented, autonomous, clear and constant communication, clear roles and responsibilities, clear strategy and requirements.
@@ -46,7 +54,7 @@ ALIGNMENT CRITERIA PRIORITY (ranked, for weighing fit)
 4. Industry interest
 5. Team culture
 
-TARGET COMPANIES (named — flag explicitly if a JD is from one of these)
+TARGET COMPANIES (named, flag explicitly if a JD is from one of these)
 Stretch (aspirational): Google, Netflix, Spotify, Coinbase, Blizzard
 Strong Fit (next-step, excited about): Ramp, Fitbod, Popeyes, Meta, Amazon, Anthropic, Figma
 Sandbox (good entry point to build leverage): Stitch Fix, Hopper, Uplight, Toast, Nextdoor
@@ -69,11 +77,14 @@ Front-end: HTML, CSS, React (production-ready). Pat can both design AND ship fro
 AI: Uses AI in his design workflow for ideation, exploration, and acceleration. AI is a process tool, not a product positioning angle.
 
 PORTFOLIO
-patlopes.com -- built using AI tools combined with Pat's own front-end skills (HTML, CSS, React). NOT built in Framer.
+patlopes.com, built using AI tools combined with Pat's own front-end skills (HTML, CSS, React). NOT built in Framer.
 
 POSITIONING RULES (important for any messaging on Pat's behalf)
 - Lens is "B2C shopping experiences and customer journeys" rather than the broader "consumer-facing"
 - AI is referenced in process (ideation, exploration), never in outcomes or as a product
 - Tone is conversational, grounded, no buzzwords, no overclaiming
 - Specificity beats generic positioning language. Cookie-cutter phrasing is a red flag.
-- Leadership angle (Lead title at Photon, mentoring at Verizon) is a differentiator and should not get buried`;
+- Leadership angle (Lead title at Photon, mentoring at Verizon) is a differentiator and should not get buried
+- Company size is not a disqualifier. Google, Netflix, Meta, Amazon, Spotify, Blizzard are all valid stretch targets. The disqualifier is bureaucracy combined with no design strategic voice, not headcount.
+- When messaging toward large companies, lead with the specific product or team, not the company brand. "I'm interested in the checkout experience on Prime" not "I'd love to work at Amazon."
+- Agency roles are only worth pursuing if the agency does product design work (not campaign/marketing deliverables). Boutique studios and design consultancies that build products are fine. Traditional advertising agencies are not.`;

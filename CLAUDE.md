@@ -78,12 +78,13 @@ Three reasons, all critical:
 outreach-app/
 ├── api/                          # Vercel serverless functions
 │   ├── analyze-jd.js             # POST → calls Anthropic to analyze a JD
+│   ├── analyze-contract.js       # POST {contract} → calls Anthropic to analyze a freelance contract (UC4)
 │   ├── find-contacts.js          # GET ?domain=... → proxies Hunter.io domain-search
 │   ├── fetch-linkedin.js         # POST {url} → calls Anthropic with web_search to scrape a profile
 │   ├── search-linkedin.js        # POST {company, titles} → calls Anthropic with web_search for LinkedIn fallback
 │   ├── research-person.js        # POST {url}|{name,company} → calls Anthropic with web_search to research a founder/CEO (UC2)
 │   ├── push-notion.js            # POST {contact} → creates a page in the Notion tracker
-│   └── generate-pitch.js         # POST {posting} → calls Anthropic to write a freelance pitch (Contra/Upwork/etc.)
+│   └── generate-pitch.js         # POST {posting, analysis?} → calls Groq to write a freelance pitch (Contra/Upwork/etc.)
 ├── src/
 │   ├── App.jsx                   # Root with tab switcher
 │   ├── main.jsx                  # Vite entry
@@ -366,18 +367,28 @@ This makes the handoff between tools explicit in the UI so Pat doesn't lose the 
 
 ---
 
-## Tab 2: Freelance Flow (UC2 person research + UC3 pitch)
+## Tab 2: Freelance Flow (UC2 person research + UC4 contract analysis + UC3 pitch)
 
-This tab serves Pat's freelance acquisition. It hosts two independent workflows, top to bottom:
+This tab serves Pat's freelance acquisition. It hosts three workflows, top to bottom:
 
 - **UC2 (person research):** research a founder/CEO by URL or name+company (`/api/research-person`) → the shared `ContactPanel` contact card. Research notes + hook feed the "Draft outreach" clipboard prompt (Hard Rule #9 preserved — no LLM writes the message here). The contact can be pushed to Notion.
+- **UC4 (contract analysis):** paste a freelance contract → `/api/analyze-contract` → inline fit result. This is triage: decide whether the contract is worth pitching before writing anything. Criteria are part-time specific (rate, hours, scope, red flags), NOT the full-time job criteria used on the Outreach tab.
 - **UC3 (pitch):** paste a freelance posting (Contra, Upwork, or similar) → generate a tailored pitch end-to-end. No contact is saved for this workflow.
+
+UC4 feeds UC3: a successful analysis copies the contract text into `posting` so the pitch card below is pre-filled and the posting is never pasted twice (this mirrors how the JD analyzer pre-fills company/domain on the Outreach tab). The `contractFit` object is then passed to `api.generatePitch(posting, contractFit)`. Both directions stay optional: the pitch card works standalone exactly as before.
 
 Independent state from the Outreach tab (no shared runtime context; only the `ContactPanel` UI is shared).
 
 ### State
 
 ```js
+// UC4 contract analysis
+const [contract, setContract] = useState("");
+const [analyzing, setAnalyzing] = useState(false);
+const [analyzeError, setAnalyzeError] = useState(null);
+const [contractFit, setContractFit] = useState(null);
+const [contractOpen, setContractOpen] = useState(false);
+
 // UC3 pitch
 const [posting, setPosting] = useState("");
 const [generating, setGenerating] = useState(false);
@@ -400,10 +411,26 @@ The research inputs (mode, URL, name, company, loading, error) live inside `Rese
 - `Research person` button (green) calls `/api/research-person`. On success `ResearchCard` renders the notes + hook and calls `onResult(data, resolvedLinkedin)`; the tab's `handleResearchResult` merges the profile into the contact via `applyProfile` (plus the resolved LinkedIn URL) and stores `{ research_notes, hook }` in `researchData`.
 - Below it, render `<ContactPanel contact={contact} setContact={setContact} research={researchData} fetching={fetching} fetchStatus={fetchStatus} setFetchStatus={setFetchStatus} onFetchLinkedIn={fetchLinkedIn} onReset={() => { setResearchData(null); setResearchKey((k) => k + 1); }} />`. Reset clears the results and remounts `ResearchCard` (via `researchKey`) so its inputs clear too.
 
+### Analyze a freelance contract (UC4)
+
+- A collapsible **optional** `Card` titled "Analyze a freelance contract", rendered above the posting card. Same pattern as the Outreach tab's "Analyze a job description" card.
+- Textarea, 9 rows. Buttons: `Analyze contract` (coral, to match this tab's accent), `Clear` (default).
+- Results render **inline inside the card**, reusing the existing `.tags-row`, `.fit-group`, `.fit-bullets`, `.summary-box` classes plus `FitBar` and `Badge`.
+- Layout: `FitBar` → badge row (rate, hours, scope, industry) → "Why it's worth it" (`strengths`) → "Watch-outs" (`gaps`) → "Red flags" (`red_flags`, only when non-empty) → `summary-box`.
+- One new CSS class, `.fit-group-flags` (red tokens), follows the existing `.fit-group-strengths` / `.fit-group-gaps` pattern. Red flags must NOT reuse the amber gaps styling: a gap is something to address in the pitch, a red flag is a reason to walk away, and rendering them identically erases the distinction the separate arrays exist to make.
+- The `rate` and `hours` fields are rendered as badges, so the prompt caps them at 30 characters ("$18,000 fixed (~$120/hr)", "15 hrs/week, 10 weeks"). Verbatim strings from the posting are too long and wrap the badge row onto multiple lines.
+- Badge maps are local to `PitchTab` and freelance-specific. Do NOT reuse the Outreach tab's `FIT_LABEL` ("Primary/Secondary/Mismatch"), which is industry language and does not describe a rate or an hours figure:
+
+```js
+const TERM_BADGE = { strong: "green", moderate: "amber", mismatch: "red", unstated: "neutral" };
+const TERM_LABEL = { strong: "Good", moderate: "Acceptable", mismatch: "Below target", unstated: "Not stated" };
+```
+
 ### Step 1: Posting Input
 
-- Textarea, 9 rows, "Paste the full Contra job posting here..."
-- Buttons: `Generate application message` (coral, primary), `Clear` (default)
+- Textarea, 9 rows, "Paste a Contra, Upwork, or other freelance posting here..."
+- Pre-filled automatically when a contract analysis succeeds above.
+- Buttons: `Generate pitch` (coral, primary), `Clear` (default)
 
 ### Step 2: Result
 
@@ -548,9 +575,37 @@ Document this in the README.
 
 **Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, hook }`, where `research_notes` is 2-3 sentences and `hook` is one specific real observation to open with. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
 
+### `/api/analyze-contract` (POST)
+
+**Request:** `{ contract: string }`
+
+**Behavior:** Mirror `analyze-jd.js` exactly (Edge runtime, same CORS/`json()`/`stripFences()` helpers, Anthropic `claude-sonnet-4-6`) with `max_tokens` 1000. This is the freelance counterpart to JD analysis (UC4): it triages a Contra/Upwork contract before Pat spends effort pitching it.
+
+The rubric lives in a module-level `FREELANCE_CRITERIA` constant, NOT in `PAT_PROFILE`, because these criteria apply only to contract work. The rate floor and hours ceiling are edited in that one place.
+
+**Criteria, and why they differ from the JD rubric:**
+
+| Criterion | Weight | Rule |
+|-----------|--------|------|
+| Rate | Heavy | $75/hr floor. $75+ strong, $50-75 moderate, under $50 mismatch. Fixed-price budgets convert to an implied hourly first, and `rate_fit` scores the converted number. Unstated budget is `"unstated"`, a question to ask, not a rejection. Equity-only is a mismatch AND a red flag. |
+| Time | Heavy | 20 hrs/week ceiling, alongside a full-time job. Under 20 strong, at 20 moderate, above 20 or "full-time" mismatch. Required weekday daytime availability (standups, core hours, on-call) is a mismatch. |
+| Scope | Moderate | Scored against Pat's product design and front-end strengths. Defined deliverables beat open-ended engagements. |
+| Red flags | Lowers score | Vague scope, spec/unpaid test work, equity-only, unrealistic timelines, scope-creep language, no named client, rate haggling, full-time work disguised as a contract. |
+| Industry | **Zero** | Reported only. The prompt carries an explicit override stating that the profile's "explicit passes" list applies to full-time career moves ONLY, not to contract work. Without that override the model penalizes a well-paid B2B SaaS or insurance contract, which is wrong here: contract work is paid work, not a career move. |
+
+**Response:**
+
+```json
+{"fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","industry":"<industry>","rate":"<verbatim or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<verbatim or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}
+```
+
+`red_flags` is deliberately separate from `gaps`: a gap is something to address in the pitch, a red flag is a reason to walk away.
+
 ### `/api/generate-pitch` (POST)
 
-**Request:** `{ posting: string }`
+**Request:** `{ posting: string, analysis?: object }`
+
+`analysis` is the optional result of `/api/analyze-contract`. When present, only its `strengths` and `gaps` are appended to the **user message** (never the system prompt, so the tone rules are untouched). `red_flags` and `fit_score` are deliberately NOT passed through: red flags are Pat's walk-away signal and have no place in a pitch, and a score only makes the model hedge its tone. With no `analysis`, behavior is identical to before.
 
 **Behavior:** Call Groq (`llama-3.3-70b-versatile`, free tier, OpenAI-compatible `chat/completions` endpoint) with a system prompt that combines `PAT_PROFILE` (imported from `lib/profile.js`) with the Contra-specific tone rules below. Groq is used here instead of Anthropic as a cost decision (see Hard Rule #7 exception); the request uses `response_format: { type: "json_object" }` to guarantee a `{ message, notes }` JSON object. The system prompt should follow this template:
 
@@ -619,12 +674,13 @@ async function request(path, options = {}) {
 
 export const api = {
   analyzeJD:        (jd)               => request("/api/analyze-jd",        { method: "POST", body: JSON.stringify({ jd }) }),
+  analyzeContract:  (contract)         => request("/api/analyze-contract",  { method: "POST", body: JSON.stringify({ contract }) }),
   findContacts:     (domain, limit=25) => request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
   fetchLinkedIn:    (url)              => request("/api/fetch-linkedin",    { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn:   (company, titles)  => request("/api/search-linkedin",   { method: "POST", body: JSON.stringify({ company, titles }) }),
   researchPerson:   ({ url, name, company }) => request("/api/research-person", { method: "POST", body: JSON.stringify({ url, name, company }) }),
   pushNotion:       (contact)          => request("/api/push-notion",       { method: "POST", body: JSON.stringify({ contact }) }),
-  generatePitch:    (posting)          => request("/api/generate-pitch",    { method: "POST", body: JSON.stringify({ posting }) }),
+  generatePitch:    (posting, analysis) => request("/api/generate-pitch",   { method: "POST", body: JSON.stringify({ posting, analysis }) }),
 };
 ```
 

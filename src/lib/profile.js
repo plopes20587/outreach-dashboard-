@@ -41,7 +41,7 @@ E-commerce context: Pat has the strongest professional case here (SeneGence $7.2
 
 COMPANY TYPE PREFERENCES
 Aligned: early-stage startup, high-growth startup, mid-size tech, agency (product-focused, not campaign/marketing deliverables).
-Company size is NOT a disqualifier. Large companies (Google, Netflix, Spotify, Amazon, Meta, Blizzard) are valid targets. The actual disqualifier is bureaucracy that slows shipping combined with design having no strategic voice — look for signals of this in the JD, not company size. Pat's own enterprise background (Verizon, Photon/KFC, SeneGence) is prior experience, not a forward-looking target — it should not be treated as evidence that enterprise roles are a good fit going forward.
+Company size is NOT a disqualifier. Large companies (Google, Netflix, Spotify, Amazon, Meta, Blizzard) are valid targets. The actual disqualifier is bureaucracy that slows shipping combined with design having no strategic voice, so look for signals of this in the JD, not company size. Pat's own enterprise background (Verizon, Photon/KFC, SeneGence) is prior experience, not a forward-looking target. It should not be treated as evidence that enterprise roles are a good fit going forward.
 
 IDEAL TEAM & LEADERSHIP
 Team environment: process-oriented, autonomous, clear and constant communication, clear roles and responsibilities, clear strategy and requirements.
@@ -54,7 +54,7 @@ ALIGNMENT CRITERIA PRIORITY (ranked, for weighing fit)
 4. Industry interest
 5. Team culture
 
-TARGET COMPANIES (named — flag explicitly if a JD is from one of these)
+TARGET COMPANIES (named, flag explicitly if a JD is from one of these)
 Stretch (aspirational): Google, Netflix, Spotify, Coinbase, Blizzard
 Strong Fit (next-step, excited about): Ramp, Fitbod, Popeyes, Meta, Amazon, Anthropic, Figma
 Sandbox (good entry point to build leverage): Stitch Fix, Hopper, Uplight, Toast, Nextdoor
@@ -77,7 +77,7 @@ Front-end: HTML, CSS, React (production-ready). Pat can both design AND ship fro
 AI: Uses AI in his design workflow for ideation, exploration, and acceleration. AI is a process tool, not a product positioning angle.
 
 PORTFOLIO
-patlopes.com — built using AI tools combined with Pat's own front-end skills (HTML, CSS, React). NOT built in Framer.
+patlopes.com, built using AI tools combined with Pat's own front-end skills (HTML, CSS, React). NOT built in Framer.
 
 POSITIONING RULES (important for any messaging on Pat's behalf)
 - Lens is "B2C shopping experiences and customer journeys" rather than the broader "consumer-facing"

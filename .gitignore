@@ -18,6 +18,9 @@ dist-ssr
 # Vercel CLI (project linkage created by `vercel link`)
 .vercel
 
+# Claude Code local settings and worktrees
+.claude
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

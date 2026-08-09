@@ -58,17 +58,31 @@ export default async function handler(request) {
     return json({ error: "Invalid request body" }, 400);
   }
 
-  const { posting } = body;
+  const { posting, analysis } = body;
   if (!posting?.trim()) {
     return json({ error: "posting is required" }, 400);
   }
+
+  // Optional context from /api/analyze-contract. Only the strengths and gaps are
+  // passed through: red flags are Pat's walk-away signal and have no place in a
+  // pitch, and a fit score would only make the model hedge its tone.
+  const strengths = analysis?.strengths?.filter(Boolean) || [];
+  const gaps = analysis?.gaps?.filter(Boolean) || [];
+  const analysisBlock =
+    strengths.length || gaps.length
+      ? `
+Fit analysis of this contract. Use it to decide what to emphasize. Do not quote it back or refer to it as an analysis.
+${strengths.length ? `Angles to lead with: ${strengths.join(" | ")}` : ""}
+${gaps.length ? `Open questions worth surfacing naturally: ${gaps.join(" | ")}` : ""}
+`
+      : "";
 
   const userMessage = `Here is a freelance job posting (Contra, Upwork, or similar) Pat is applying to:
 
 ---
 ${posting}
 ---
-
+${analysisBlock}
 Write the pitch following all tone and structure rules. Then add a PERSONALIZATION NOTES section.
 
 Return as JSON only, no markdown:
