@@ -13,13 +13,14 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  analyzeJD:       (jd)             => request("/api/analyze-jd",               { method: "POST", body: JSON.stringify({ jd }) }),
-  analyzeContract: (contract)       => request("/api/analyze-contract",         { method: "POST", body: JSON.stringify({ contract }) }),
+  // One endpoint for both job descriptions and freelance contracts. It detects
+  // which rubric to run; forceType ("full-time" | "freelance") overrides that.
+  analyzePosting: (posting, forceType) => request("/api/analyze-posting",       { method: "POST", body: JSON.stringify({ posting, forceType }) }),
   findContacts:   (domain, limit=10)=> request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
   fetchLinkedIn:  (url)             => request("/api/fetch-linkedin",            { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn: (company, titles) => request("/api/search-linkedin",           { method: "POST", body: JSON.stringify({ company, titles }) }),
   researchPerson: ({ url, name, company }) => request("/api/research-person",     { method: "POST", body: JSON.stringify({ url, name, company }) }),
   pushNotion:     (contact)         => request("/api/push-notion",               { method: "POST", body: JSON.stringify({ contact }) }),
-  // analysis is optional context from analyzeContract; the pitch works without it
+  // analysis is optional freelance context from analyzePosting; pitch works without it
   generatePitch:  (posting, analysis) => request("/api/generate-pitch",          { method: "POST", body: JSON.stringify({ posting, analysis }) }),
 };

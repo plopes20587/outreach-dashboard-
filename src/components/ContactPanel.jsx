@@ -5,76 +5,25 @@ import Card from "./Card";
 import Field from "./Field";
 import Button from "./Button";
 import Badge from "./Badge";
-import PromptBox from "./PromptBox";
 
-// Suggest which Claude.ai reference template the outreach-composer skill should
-// lean on, based on contact type first, then lead temperature.
-function suggestTemplate(contact) {
-  if (contact.contactType === "Boss Hunt")     return "Boss Hunting Playbook";
-  if (contact.contactType === "Informational") return "Informational Interview";
-  if (contact.leadType === "Warm" || contact.leadType === "Warm-ish") {
-    return "Warm Outreach Strategy";
-  }
-  return "Cold Outreach Strategy";
-}
-
-// Builds the structured prompt that Pat copies into his Claude.ai project, where
-// the outreach-composer skill + reference templates actually write the message.
-// This app intentionally does NOT generate the message itself (CLAUDE.md Hard
-// Rule #9). `fit` is present for job-based contacts (UC1); `research` is present
-// for researched founders/CEOs (UC2). Both are optional.
-function buildOutreachPrompt(contact, fit, research) {
-  const lines = [];
-
-  let opener = `Draft an outreach message for ${contact.name || "this contact"}`;
-  if (contact.title)   opener += `, ${contact.title}`;
-  if (contact.company) opener += ` at ${contact.company}`;
-  opener += ".";
-  lines.push(opener);
-
-  if (contact.contactType) lines.push(`Contact type: ${contact.contactType}.`);
-  if (contact.leadType)    lines.push(`Lead type: ${contact.leadType}.`);
-  if (contact.location)    lines.push(`Location: ${contact.location}.`);
-  if (contact.linkedin)    lines.push(`LinkedIn: ${contact.linkedin}.`);
-
-  if (fit?.summary) {
-    lines.push("", `Fit context (from the job description): ${fit.summary}`);
-    if (fit.strengths?.length) {
-      lines.push(`Why it fits: ${fit.strengths.join("; ")}.`);
-    }
-  }
-
-  if (research?.research_notes) {
-    lines.push("", `Research on this person: ${research.research_notes}`);
-  }
-  if (research?.hook) {
-    lines.push(`Specific hook to open with: ${research.hook}`);
-  }
-
-  lines.push(
-    "",
-    `Suggested template: ${suggestTemplate(contact)}.`,
-    "Use my outreach-composer skill and the suggested reference template to write the message.",
-  );
-
-  return lines.join("\n");
-}
-
-// The always-visible Contact card, shared by both tabs. Contact state is lifted
-// to the parent tab (which populates it from search results or person research)
-// and passed in via `contact`/`setContact`. `fit` (UC1) and `research` (UC2) are
-// optional context sources for the Draft outreach prompt. `onReset` lets the
-// parent clear any tab-specific state (search selection, research notes) when the
-// user resets the contact card. The LinkedIn fetch itself lives in the parent's
-// useLinkedInFetch hook so its badge is shared across every fetch trigger; the
-// panel just renders that status and calls `onFetchLinkedIn` from its own field.
+// Card 4 of the single-page flow: the one place a contact is edited. Contact
+// state is lifted to Dashboard (which populates it from contact search or person
+// research), so this panel is the editor and the Notion writer, nothing more.
+//
+// Composing moved out to ComposeCard: the prompt it builds needs the posting
+// analysis and the research notes as well as the contact, and assembling that
+// here would have made this component reach for state it does not otherwise own.
+//
+// `onReset` lets Dashboard clear whatever else belongs to the cleared contact
+// (search selection, research notes, composed output). The LinkedIn fetch lives
+// in Dashboard's useLinkedInFetch hook so its badge is shared across every
+// trigger; this panel renders that status and calls `onFetchLinkedIn`.
 export default function ContactPanel({
-  contact, setContact, fit, research, onReset,
+  contact, setContact, onReset,
   fetching, fetchStatus, setFetchStatus, onFetchLinkedIn,
 }) {
   const [pushing, setPushing] = useState(false);
   const [notionStatus, setNotionStatus] = useState(null);
-  const [outreachPrompt, setOutreachPrompt] = useState(null);
 
   async function handlePushNotion() {
     setPushing(true);
@@ -90,13 +39,8 @@ export default function ContactPanel({
     }
   }
 
-  function handleDraftOutreach() {
-    setOutreachPrompt(buildOutreachPrompt(contact, fit, research));
-  }
-
   function handleReset() {
     setContact(initContact());
-    setOutreachPrompt(null);
     setNotionStatus(null);
     setFetchStatus(null);
     onReset?.();
@@ -220,9 +164,6 @@ export default function ContactPanel({
         >
           {pushing ? "Pushing..." : "Push to Notion"}
         </Button>
-        <Button variant="purple" onClick={handleDraftOutreach}>
-          Draft outreach
-        </Button>
         <Button variant="default" onClick={handleReset}>
           Reset
         </Button>
@@ -236,12 +177,6 @@ export default function ContactPanel({
       {notionStatus && notionStatus !== "ok" && (
         <div className="notice notice-error" style={{ marginTop: 10 }}>
           {notionStatus}
-        </div>
-      )}
-
-      {outreachPrompt && (
-        <div style={{ marginTop: 14 }}>
-          <PromptBox text={outreachPrompt} />
         </div>
       )}
     </Card>

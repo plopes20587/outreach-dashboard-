@@ -19,7 +19,7 @@ The full `PAT_PROFILE` constant is provided as a separate file `profile.js` alon
 The profile is structured into labeled sections (Core Differentiator, Current Role, Signature Work, Target Roles, Target Industries, Strengths, Skills, Positioning Rules). The structure exists so the LLM can pull the right context for the right prompt. Do NOT collapse it into prose or rewrite it for brevity.
 
 `PAT_PROFILE` is imported by:
-- `api/analyze-jd.js` (full string injected into the JD analysis prompt)
+- `api/analyze-posting.js` (full string injected into the posting analysis prompt, for both rubrics)
 - `api/generate-pitch.js` (relevant sections referenced in the system prompt)
 
 Both serverless functions need access to the same constant. The cleanest approach: put `profile.js` at `src/lib/profile.js` and also create a thin `api/lib/profile.js` that re-exports from a shared location, OR duplicate the file (simpler, less ceremony). Pick the simpler option.
@@ -35,20 +35,20 @@ The system is two cooperating tools, not one:
 │  THIS APP (local Vite + Vercel)                       │      │  CLAUDE.AI PROJECT                       │
 │                                                       │      │                                          │
 │  Owns deterministic, repeatable work:                 │      │  Owns contextual writing:               │
-│  • JD fit analysis                                    │      │  • Outreach message generation          │
+│  • Posting fit analysis (job or contract)             │      │  • Outreach message generation          │
 │  • Hunter.io contact lookup                           │ ───> │    (uses outreach-composer skill +      │
 │  • LinkedIn profile fetch                             │      │     project memory + reference          │
 │  • Notion tracker writes                              │      │     templates: Boss Hunting,            │
-│  • Contra application messages (self-contained)       │      │     Cold Outreach, Warm Outreach,       │
+│  • Freelance pitches (self-contained)                 │      │     Cold Outreach, Warm Outreach,       │
 │  • Builds outreach prompts to copy to clipboard       │      │     Informational Interview)           │
 └─────────────────────────────────────────────────────┘      └──────────────────────────────────────────┘
 ```
 
 The "Draft outreach" button in this app does NOT call an LLM. It builds a structured prompt string and copies it to the clipboard. Pat manually pastes that into Claude.ai, where his skills and memory generate the actual message.
 
-The Contra tab is the one exception. Contra messages have a specific repeatable format, so the freelance tone rules are baked into the serverless function's system prompt and the message is generated end-to-end in this app.
+Generate pitch is the one exception. Freelance pitches have a specific repeatable format, so the tone rules are baked into the serverless function's system prompt and the message is generated end-to-end in this app. It sits directly beside Draft outreach in the Compose card, so the split is now between two adjacent buttons rather than two tabs: same card, different contracts.
 
-DO NOT build any LLM-powered outreach generation for the LinkedIn flow in this app. That's a hard rule and is enforced in the Hard Rules section below.
+DO NOT build any LLM-powered outreach generation for the contact flow in this app. That's a hard rule and is enforced in the Hard Rules section below.
 
 ---
 
@@ -77,8 +77,7 @@ Three reasons, all critical:
 ```
 outreach-app/
 ├── api/                          # Vercel serverless functions
-│   ├── analyze-jd.js             # POST → calls Anthropic to analyze a JD
-│   ├── analyze-contract.js       # POST {contract} → calls Anthropic to analyze a freelance contract (UC4)
+│   ├── analyze-posting.js        # POST {posting, forceType?} → detects job vs contract, scores against the matching rubric
 │   ├── find-contacts.js          # GET ?domain=... → proxies Hunter.io domain-search
 │   ├── fetch-linkedin.js         # POST {url} → calls Anthropic with web_search to scrape a profile
 │   ├── search-linkedin.js        # POST {company, titles} → calls Anthropic with web_search for LinkedIn fallback
@@ -86,7 +85,8 @@ outreach-app/
 │   ├── push-notion.js            # POST {contact} → creates a page in the Notion tracker
 │   └── generate-pitch.js         # POST {posting, analysis?} → calls Groq to write a freelance pitch (Contra/Upwork/etc.)
 ├── src/
-│   ├── App.jsx                   # Root with tab switcher
+│   ├── App.jsx                   # Root wrapper; renders Dashboard (no tabs, no router)
+│   ├── Dashboard.jsx             # The single page: owns all shared state, renders the five cards in fixed order
 │   ├── main.jsx                  # Vite entry
 │   ├── styles.css                # Global styles + CSS variables for theming
 │   ├── lib/
@@ -94,20 +94,19 @@ outreach-app/
 │   │   ├── api.js                # Frontend wrappers for /api/* endpoints
 │   │   ├── contact.js            # initContact() blank-contact factory + applyProfile() field merge (shared)
 │   │   └── notion-schema.js      # Notion data source ID and field mappings
-│   ├── components/
-│   │   ├── Tabs.jsx              # Top tab bar
+│   ├── components/               # Cards 1-5 of the flow, plus the shared primitives
+│   │   ├── PostingAnalyzer.jsx   # Card 1: paste a posting, detected type badge + branching result layout
+│   │   ├── ResearchCard.jsx      # Card 2: self-contained person research; reports via onResult, reset by key remount
+│   │   ├── FindContacts.jsx      # Card 3: Hunter + LinkedIn-fallback search; owns classifyTitle/classifyContact/mergeContacts
+│   │   ├── ContactPanel.jsx      # Card 4: the one contact editor + Push to Notion; LinkedIn fetch status comes in via props
+│   │   ├── ComposeCard.jsx       # Card 5: Draft outreach (clipboard prompt) + Generate pitch, context-aware emphasis
 │   │   ├── Field.jsx             # Label + input wrapper
 │   │   ├── Card.jsx              # Card container: plain title or collapsible/optional header
 │   │   ├── Button.jsx            # Variants: default, blue, green, purple, coral
-│   │   ├── Badge.jsx             # Status pills (green/amber/red/blue/neutral)
+│   │   ├── Badge.jsx             # Status pills (green/amber/red/blue/coral/neutral)
 │   │   ├── ContactCard.jsx       # Selectable contact result card
-│   │   ├── ContactPanel.jsx      # Shared always-visible Contact card + Notion/Draft outreach; LinkedIn fetch status comes in via props
-│   │   ├── ResearchCard.jsx      # Self-contained "Research a person" card (UC2); reports results via onResult, reset by key remount
 │   │   ├── PromptBox.jsx         # Copy-to-clipboard prompt display
 │   │   └── FitBar.jsx            # Score bar with color coding
-│   ├── tabs/
-│   │   ├── OutreachTab.jsx       # Job-based outreach (UC1): JD fit → find contacts → shared ContactPanel → outreach handoff
-│   │   └── PitchTab.jsx          # Freelance flow: ResearchCard (UC2) → shared ContactPanel, and Contra/Upwork posting → pitch (UC3)
 │   └── hooks/
 │       ├── useCopy.js            # Hook for clipboard copy with copied state
 │       └── useLinkedInFetch.js   # Hook owning one LinkedIn fetch + fetching/fetchStatus, shared by every fetch trigger
@@ -128,8 +127,8 @@ Document these in `.env.example`. Pat sets them in the Vercel dashboard, not in 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes | For the Anthropic API calls: JD analysis, LinkedIn fetch, LinkedIn search, person research |
-| `GROQ_API_KEY` | Yes | For the Freelance Pitch tab (`generate-pitch`), which uses Groq's free tier |
+| `ANTHROPIC_API_KEY` | Yes | For the Anthropic API calls: posting analysis, LinkedIn fetch, LinkedIn search, person research |
+| `GROQ_API_KEY` | Yes | For Generate pitch in the Compose card (`generate-pitch`), which uses Groq's free tier |
 | `HUNTER_API_KEY` | Yes | For Hunter.io domain-search |
 | `NOTION_API_KEY` | Yes | Internal integration token for the Notion workspace |
 | `NOTION_DATABASE_ID` | Yes | The Contact Tracker database ID: `2f312b17-d357-8155-b06f-000b29a1c83f` |
@@ -217,238 +216,143 @@ Five variants: `default`, `blue` (primary), `green` (success/Notion), `purple` (
 - Tinted bg matching the variant
 - `cursor: pointer`, `transition: background 0.15s`
 
-### Tabs
+## Single-Page Flow
 
-Sticky bar at top inside a `var(--bg-1)` rounded container with 6px padding. Each tab is a button: 8px 14px padding, 8px radius. Active tab has `var(--bg-2)` background; inactive is transparent with `var(--text-2)`.
+There are no tabs. The app is one page with **five cards, always visible, always in this order**:
 
----
+```
+1. Analyze a posting     (optional input -- auto-detects job vs freelance contract)
+2. Research a person     (optional input)
+3. Find contacts         (optional input)
+4. Contact               (single shared panel)
+5. Compose               (Draft outreach + Generate pitch, context-aware)
+```
 
-## Tab 1: Outreach Flow (UC1, job-based)
+**Why one page.** The two-tab split (Outreach / Freelance Pitch) forced a choice up front that the actual work does not make. The same contact, the same research, and the same posting feed both outcomes, so `ContactPanel` was rendered twice, the two analyzers were structurally identical, and "produce the thing I send" was split across two tabs. Collapsing all of it removes the routing decision and the duplication.
 
-This tab handles the job-based entry point:
-- **UC1 (job-based):** paste a JD → fit analysis → find contacts (Hunter/LinkedIn) → contact card.
+Cards 1, 2, and 3 are independent optional inputs: any one of them, or none, can feed the Contact card. Card 4 is the single place a contact is edited. Card 5 is the single place something sendable is produced.
 
-(Person research — UC2 — lives on the Freelance Pitch tab, since Pat only researches founders/CEOs for freelance acquisition. See Tab 2.)
+### State (in `src/Dashboard.jsx`)
 
-The JD analysis and Find contacts sections are collapsible **optional** panels (no numbered steps); the Contact card (the shared `ContactPanel` component) is always visible. The "Draft outreach" button still does NOT call an LLM (Hard Rule #9) -- it builds an enriched prompt (fit summary, contact/lead type, and a suggested reference template) and copies it to the clipboard for Pat's Claude.ai outreach-composer skill.
-
-### State (in `OutreachTab.jsx`)
-
-The Contact card's own state (`pushing`, `notionStatus`, `outreachPrompt`) lives inside the shared `ContactPanel` component. The LinkedIn fetch + its `fetching`/`fetchStatus` badge state come from the `useLinkedInFetch(setContact)` hook, owned by the tab and passed into `ContactPanel` so the badge fires for search-select, manual URL, and the card's own field alike. `OutreachTab` keeps the search/analysis state and lifts `contact`/`setContact`, passing them plus `fit` into `<ContactPanel>`.
+`Dashboard` owns everything shared across the cards. That ownership is what lets one Contact card serve all three input paths.
 
 ```js
-const [jd, setJd] = useState("");
+// Card 1: posting analysis (analysis.posting_type is the layout discriminator)
+const [posting, setPosting] = useState("");
 const [analyzing, setAnalyzing] = useState(false);
-const [fit, setFit] = useState(null);  // { fit_score, company, industry, industry_fit, role_level, strategic_fit, ai_environment, environment_signals, strengths, gaps, summary, search_titles }
+const [analysis, setAnalysis] = useState(null);
+const [analyzeError, setAnalyzeError] = useState(null);
+
+// Card 2: person research
+const [researchData, setResearchData] = useState(null);  // { research_notes, hook }
+const [researchKey, setResearchKey] = useState(0);       // bump to remount and clear
+
+// Card 3: contact search
 const [company, setCompany] = useState("");
 const [domain, setDomain] = useState("");
-const [searching, setSearching] = useState(false);    // LinkedIn fallback
+const [searching, setSearching] = useState(false);
 const [searchResults, setSearchResults] = useState([]);
 const [searchDone, setSearchDone] = useState(false);
-const [hunterError, setHunterError] = useState(null);
+const [searchError, setSearchError] = useState(null);
 const [selIdx, setSelIdx] = useState(null);
-const [showManual, setShowManual] = useState(false);
 const [manualUrl, setManualUrl] = useState("");
+
+// Card 4: the one shared contact
 const [contact, setContact] = useState(initContact());
 const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
-```
 
-`initContact()` (exported from `src/lib/contact.js`, alongside `applyProfile()`) returns:
-
-```js
-{ name: "", company: "", title: "", location: "", email: "", linkedin: "",
-  contactType: "", leadType: "", status: "Did not send" }
-```
-
-### Step 1: Job Description
-
-- Card with step number 1, title "Job description"
-- Textarea, 7 rows, full width
-- Buttons: `Analyze fit` (blue, primary), `Clear` (default)
-- On analyze: POST to `/api/analyze-jd` with `{ jd, profile: PAT_PROFILE }`. Set `fit` state on response.
-- Auto-extract company name and pre-fill both `company` and a guessed `domain` (lowercased company + ".com")
-
-### Step 2: Fit Analysis & Contact Search
-
-Visible only after analyze succeeds.
-
-- Score row: `{score}/100` (22px text) + horizontal bar (5px tall, full width). Bar color: green ≥75, amber ≥50, red <50.
-- Tags row: industry fit pill reading `{industry} -- {label}` (green/amber/red via `FIT_BADGE`, label via `FIT_LABEL` = Primary/Secondary/Mismatch), then a role level pill (blue), then up to three signal pills from the local `STRATEGIC_*` / `AI_*` / `ENV_*` maps.
-- **The signal maps deliberately omit their "no signal" cases** (`ai_environment: neutral`, `environment_signals: neutral`), so those render no pill. A pill announcing that the JD didn't mention something is noise, and the row already carries industry and role level. Rendering is guarded on the label map having an entry, not just on the field being present, so an unexpected value from the model is skipped rather than rendered as an empty badge.
-- "Why it fits" (`strengths`) in a `.fit-group-strengths` block, then "Watch-outs" (`gaps`) in `.fit-group-gaps`. Each renders only when its array is non-empty.
-- Summary in a `var(--bg-2)` box, line-height 1.7.
-- Divider.
-- Two-column grid: `Company` input + `Company domain (for Hunter.io)` input.
-- Hunter proxy section: text label "Hunter.io proxy URL" + `Configured` badge if set. Click "Configure" to reveal the input. URL is saved to `sessionStorage` under key `hunterProxy` so it persists across the tab session.
-- **Wait — see "API Architecture" below. Pat is moving to a real backend, so the proxy URL field comes OUT.** Hunter calls go directly to `/api/find-contacts` on the same Vercel deployment. No proxy URL state needed.
-- One action button: `Search` (green). It queries both sources from a single click. Hunter.io (fast, needs a domain) runs first and its results render immediately; the LinkedIn web-search fallback (slow, and a paid Anthropic web search) runs **only when Hunter returns fewer than 2 contacts** and is merged in when it arrives. Enabled when either a domain or a company is present. (The fallback was previously fired on every Search; it is now gated to the Hunter-empty case for cost efficiency.)
-- Loading states: the button shows "Searching..." while pending. While the LinkedIn pass is still running after Hunter results appear, show a muted "Also checking LinkedIn..." line above the results.
-- Error display in red-tinted box if Hunter fails. LinkedIn errors are swallowed (best-effort augment) so a LinkedIn miss never wipes out Hunter results.
-
-### Search Results
-
-- Header: "{n} contact(s) found — select one to populate the profile below"
-- Each result is a `ContactCard`:
-  - Avatar circle with initials
-  - Name (13px, weight 500)
-  - Title (12px, text-2)
-  - Email if present (11px, green)
-  - Snippet if present (12px, text-2)
-  - LinkedIn URL link (11px, blue, opens in new tab, stops propagation)
-  - Contact type pill if present (neutral tag)
-  - "Selected" indicator on right when active
-- Click anywhere on the card to select. If it has a LinkedIn URL with `linkedin.com/in/`, also trigger `/api/fetch-linkedin` to enrich data. Always populate name, title, email, linkedin, contact type, and company from the result.
-- Below results: "None of these — add a LinkedIn URL manually" toggle button.
-
-**Feedback grouping (UX):** every message this action can produce renders **inside the Find contacts card**, so it is always clear which action caused it (this mirrors how the Analyze card shows its fit results inline). That means: the Hunter error, the search results, the empty state, and the manual look-up feedback all live in this one card — no floating notices between cards. The empty state ("No contacts found for X. Add someone by LinkedIn URL below.") uses the neutral `notice-info` style, not `notice-error`, because "no results" is a normal outcome, not a failure. It is hidden once a profile has been loaded (`fetchStatus === "ok"`), and `fetchStatus` is cleared at the start of each new Search.
-
-### Manual LinkedIn URL Entry
-
-Rendered inside the Find contacts card. Visible when the "add a LinkedIn URL manually" toggle is on, or automatically when a search returns no results.
-
-- Single input + green "Look up profile" button (label "Looking up..." while pending)
-- On click: calls `/api/fetch-linkedin` with the URL via the shared `useLinkedInFetch` hook
-- Its own success/error notice appears right below it ("Profile loaded into the contact below." / "Couldn't load that profile...")
-- Result populates the contact profile fields below
-
-### Step 3: Contact Profile
-
-Always visible at the bottom.
-
-- 2-column grid: `Contact name *`, `Company *`
-- 2-column grid: `Title`, `Location`
-- 2-column grid: `Email (from Hunter.io)`, `LinkedIn URL — paste and press Enter to auto-fill` with status badge inline
-  - LinkedIn input has `onBlur` and `onKeyDown` (Enter) handlers that call `/api/fetch-linkedin`
-  - Badge states: `Fetching profile...` (amber), `Profile loaded` (green), `Could not load — fill in manually` (red)
-- 3-column grid:
-  - `Contact type` select: Hiring Manager, Boss Hunt, Recruiter, Referral, Informational, Freelance/Client
-  - `Lead type` select: Cold, Warm-ish, Warm
-  - `Status` select: Did not send (default), Email Sent, Follow-up Sent, Responded, No response
-- Divider.
-- Three buttons:
-  - `Push to Notion` (green) — POST to `/api/push-notion`. On Email Sent or Follow-up Sent status, also include today's date and a +10-day follow-up date.
-  - `Draft outreach` (purple) — generates a prompt string with all contact context and shows it in a copy-to-clipboard box (PromptBox component) for Pat to paste into Claude.
-  - `Reset` (default) — clears the contact profile fields.
-- Success/error notice bars below buttons.
-
-### Draft Outreach Prompt Format
-
-**IMPORTANT ARCHITECTURE NOTE:** Outreach message generation is intentionally NOT performed by the local app. The local app's only job here is to build a structured prompt string and copy it to the clipboard. Pat then pastes that prompt into Claude.ai (his Claude project), where his custom outreach-composer skill, project memory, and reference templates (Boss Hunting Playbook, Cold Outreach Strategy, Warm Outreach Strategy, Informational Interview templates) generate the final message.
-
-This split exists because:
-- The contact-type nuance (Hiring Manager vs Boss Hunt vs Recruiter vs Referral vs Informational) requires reference files that live only in Claude.ai
-- The local app handles deterministic work (data lookup, Notion writes, JD analysis); Claude.ai handles contextual writing
-- This avoids duplicating skill content across two places that would need to stay in sync
-
-**Do NOT build a `/api/draft-outreach` endpoint.** Do NOT add Anthropic calls for outreach generation. The button is purely a clipboard copy interaction.
-
-The frontend builds the prompt using exactly this function (no LLM call):
-
-```js
-function buildOutreachPrompt(contact, fit) {
-  let msg = `Draft an outreach message for ${contact.name || "this contact"}`;
-  if (contact.title)   msg += `, ${contact.title}`;
-  if (contact.company) msg += ` at ${contact.company}`;
-  msg += ".";
-  if (contact.contactType) msg += ` Contact type: ${contact.contactType}.`;
-  if (contact.leadType)    msg += ` Lead type: ${contact.leadType}.`;
-  if (contact.linkedin)    msg += ` LinkedIn: ${contact.linkedin}.`;
-  if (contact.location)    msg += ` Location: ${contact.location}.`;
-  if (fit?.summary)        msg += ` Fit context: ${fit.summary.substring(0, 300)}`;
-  return msg;
-}
-```
-
-The PromptBox component renders this in a `<textarea readOnly>` so it's natively selectable and copyable. Use `document.execCommand("copy")` via a hidden textarea for the Copy button. `navigator.clipboard` can be unreliable in some browsers/contexts.
-
-PromptBox should also include a small helper line below the textarea, in muted text:
-
-> "Paste into your Claude project to generate the message using your outreach skill and templates."
-
-This makes the handoff between tools explicit in the UI so Pat doesn't lose the workflow context when he comes back to this after a break.
-
----
-
-## Tab 2: Freelance Flow (UC2 person research + UC4 contract analysis + UC3 pitch)
-
-This tab serves Pat's freelance acquisition. It hosts three workflows, top to bottom:
-
-- **UC2 (person research):** research a founder/CEO by URL or name+company (`/api/research-person`) → the shared `ContactPanel` contact card. Research notes + hook feed the "Draft outreach" clipboard prompt (Hard Rule #9 preserved — no LLM writes the message here). The contact can be pushed to Notion.
-- **UC4 (contract analysis):** paste a freelance contract → `/api/analyze-contract` → inline fit result. This is triage: decide whether the contract is worth pitching before writing anything. Criteria are part-time specific (rate, hours, scope, red flags), NOT the full-time job criteria used on the Outreach tab.
-- **UC3 (pitch):** paste a freelance posting (Contra, Upwork, or similar) → generate a tailored pitch end-to-end. No contact is saved for this workflow.
-
-UC4 feeds UC3: a successful analysis copies the contract text into `posting` so the pitch card below is pre-filled and the posting is never pasted twice (this mirrors how the JD analyzer pre-fills company/domain on the Outreach tab). The `contractFit` object is then passed to `api.generatePitch(posting, contractFit)`. Both directions stay optional: the pitch card works standalone exactly as before.
-
-Independent state from the Outreach tab (no shared runtime context; only the `ContactPanel` UI is shared).
-
-### State
-
-```js
-// UC4 contract analysis
-const [contract, setContract] = useState("");
-const [analyzing, setAnalyzing] = useState(false);
-const [analyzeError, setAnalyzeError] = useState(null);
-const [contractFit, setContractFit] = useState(null);
-const [contractOpen, setContractOpen] = useState(false);
-
-// UC3 pitch
-const [posting, setPosting] = useState("");
+// Card 5: composed output
+const [outreachPrompt, setOutreachPrompt] = useState(null);
+const [pitch, setPitch] = useState(null);
 const [generating, setGenerating] = useState(false);
-const [result, setResult] = useState(null);  // { message, notes }
-const [error, setError] = useState(false);
-
-// UC2 person research (populates the shared ContactPanel)
-const [contact, setContact] = useState(initContact());
-const [researchData, setResearchData] = useState(null);  // { research_notes, hook }
-const [researchKey, setResearchKey] = useState(0);        // bump to remount ResearchCard on Reset
-const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
+const [pitchError, setPitchError] = useState(null);
 ```
 
-The research inputs (mode, URL, name, company, loading, error) live inside `ResearchCard`, not the tab.
+### Card 1: Analyze a posting (`PostingAnalyzer.jsx`)
 
-### Research a person (UC2)
+Plain titled `Card`. Textarea (9 rows), placeholder "Paste a job description or freelance contract. The type is detected automatically." Buttons: `Analyze` (blue), `Clear` (default). Results render inline.
 
-- Rendered as `<ResearchCard key={researchKey} onResult={handleResearchResult} />` at the top of the tab.
-- `ResearchCard` is a plain titled `Card` (not collapsible). Mode toggle: `By URL` / `By name + company`. URL mode is a single input (Product Hunt, Crunchbase, site, or LinkedIn); name mode is a two-column name + company grid.
-- `Research person` button (green) calls `/api/research-person`. On success `ResearchCard` renders the notes + hook and calls `onResult(data, resolvedLinkedin)`; the tab's `handleResearchResult` merges the profile into the contact via `applyProfile` (plus the resolved LinkedIn URL) and stores `{ research_notes, hook }` in `researchData`.
-- Below it, render `<ContactPanel contact={contact} setContact={setContact} research={researchData} fetching={fetching} fetchStatus={fetchStatus} setFetchStatus={setFetchStatus} onFetchLinkedIn={fetchLinkedIn} onReset={() => { setResearchData(null); setResearchKey((k) => k + 1); }} />`. Reset clears the results and remounts `ResearchCard` (via `researchKey`) so its inputs clear too.
+The **type badge renders first**, before any numbers: blue "Job posting" or coral "Freelance contract". Which rubric ran determines the entire layout below it, so it must be unmissable.
 
-### Analyze a freelance contract (UC4)
+Directly under it, a muted `.link-button` override: "Analyzed as a job posting. Re-run as freelance contract" (and vice versa). It calls `api.analyzePosting(posting, otherType)`. Detection is good, not perfect, and the override is the escape hatch.
 
-- A collapsible **optional** `Card` titled "Analyze a freelance contract", rendered above the posting card. Same pattern as the Outreach tab's "Analyze a job description" card.
-- Textarea, 9 rows. Buttons: `Analyze contract` (coral, to match this tab's accent), `Clear` (default).
-- Results render **inline inside the card**, reusing the existing `.tags-row`, `.fit-group`, `.fit-bullets`, `.summary-box` classes plus `FitBar` and `Badge`.
-- Layout: `FitBar` → badge row (rate, hours, scope, industry) → "Why it's worth it" (`strengths`) → "Watch-outs" (`gaps`) → "Red flags" (`red_flags`, only when non-empty) → `summary-box`.
-- One new CSS class, `.fit-group-flags` (red tokens), follows the existing `.fit-group-strengths` / `.fit-group-gaps` pattern. Red flags must NOT reuse the amber gaps styling: a gap is something to address in the pitch, a red flag is a reason to walk away, and rendering them identically erases the distinction the separate arrays exist to make.
-- The `rate` and `hours` fields are rendered as badges, so the prompt caps them at 30 characters ("$18,000 fixed (~$120/hr)", "15 hrs/week, 10 weeks"). Verbatim strings from the posting are too long and wrap the badge row onto multiple lines.
-- Badge maps are local to `PitchTab` and freelance-specific. Do NOT reuse the Outreach tab's `FIT_LABEL` ("Primary/Secondary/Mismatch"), which is industry language and does not describe a rate or an hours figure:
+Layout branches on `posting_type`:
+
+- **Full-time:** `FitBar` -> badge row (industry fit, role level, strategic fit, AI environment) -> "Why it fits" (`strengths`) -> "Watch-outs" (`gaps`) -> `summary-box`
+- **Freelance:** `FitBar` -> badge row (rate, hours, scope, industry) -> "Why it's worth it" (`strengths`) -> "Watch-outs" (`gaps`) -> "Red flags" (`red_flags`, only when non-empty, `.fit-group-flags`) -> `summary-box`
+
+Badge maps are local to this component and **must not be shared across the two layouts**:
 
 ```js
+const INDUSTRY_LABEL = { strong: "Primary industry fit", moderate: "Secondary industry fit", mismatch: "Industry mismatch" };
+const STRATEGIC_LABEL = { strong: "Strategic involvement", moderate: "Limited strategic scope", weak: "Executional only" };
+const AI_LABEL = { strong: "AI-integrated team", flag: "AI as product, not process" };
+
 const TERM_BADGE = { strong: "green", moderate: "amber", mismatch: "red", unstated: "neutral" };
 const TERM_LABEL = { strong: "Good", moderate: "Acceptable", mismatch: "Below target", unstated: "Not stated" };
 ```
 
-### Step 1: Posting Input
+`AI_LABEL` has no `neutral` entry on purpose, and rendering guards on the label map having an entry rather than on the field being present. A pill announcing that the posting did not mention AI either way is noise, and the same guard skips an unexpected model value instead of rendering an empty badge.
 
-- Textarea, 9 rows, "Paste a Contra, Upwork, or other freelance posting here..."
-- Pre-filled automatically when a contract analysis succeeds above.
-- Buttons: `Generate pitch` (coral, primary), `Clear` (default)
+Never use the industry labels on a freelance result: "Primary/Secondary/Mismatch" is industry language and says nothing about a rate.
 
-### Step 2: Result
+On success, `Dashboard` pre-fills the search fields: a job posting's `company` fills both `company` and a guessed `domain` (lowercased company + ".com"); a contract's `client` fills `company` only, since a client name rarely maps to a searchable domain.
 
-Visible after generation succeeds.
+### Card 2: Research a person (`ResearchCard.jsx`)
 
-- Header bar: "Ready to copy into Contra" + Copy button (coral)
-- Message in a coral-bordered textarea, 10 rows, readonly, click-to-select-all
-- Divider, then "Personalization notes" label + plain text in a bordered notes box
-- `Regenerate` button at the bottom
+Unchanged from the previous Freelance tab. Self-contained: owns its mode toggle (`By URL` / `By name + company`) and inputs, calls `/api/research-person`, reports up via `onResult(data, resolvedLinkedin)`. Keyed by `researchKey` so the Contact card's Reset remounts and clears it.
 
-### Generation Logic
+### Card 3: Find contacts (`FindContacts.jsx`)
 
-POST to `/api/generate-pitch` with `{ posting }`. The serverless function uses a system prompt baked in (see API spec below) to enforce tone rules.
+Extracted from the old OutreachTab. Two-column `Company` + `Company domain` grid, one green `Search` button.
+
+Hunter.io runs first and renders immediately. The LinkedIn web search is slow, unreliable, and paid, so it runs **only when Hunter returns fewer than 2 contacts**, and its errors are swallowed so a LinkedIn miss never wipes out Hunter results. While it runs, a muted "Also checking LinkedIn..." line shows above the results.
+
+Every message this card can produce renders **inside this card**: search error, results list, empty state, and the manual URL entry with its own feedback. The empty state uses neutral `notice-info`, not `notice-error`, because no results is a normal outcome. Copy: "No design or recruiting contacts found for {company}. Add someone by LinkedIn URL below."
+
+**Manual LinkedIn URL entry is always rendered** at the bottom of the card, not toggled. It is the reliable path when search misses, and hiding it behind a "None of these" toggle buried the recovery.
+
+The `classifyTitle` / `classifyContact` / `mapLinkedInResult` / `mergeContacts` helpers live in this file.
+
+### Card 4: Contact (`ContactPanel.jsx`)
+
+The one place a contact is edited, fed by any of cards 1 through 3. Field grid, LinkedIn fetch badge, and two buttons only: `Push to Notion` (green) and `Reset` (default).
+
+`Draft outreach` and its `PromptBox` moved to Compose. The prompt needs the posting analysis and the research notes as well as the contact, and building it here would have made this component reach for state it does not own.
+
+Reset clears everything belonging to the cleared contact: the search selection, the research (inputs included, via the `researchKey` bump), and any outreach prompt. The posting analysis and generated pitch survive on purpose, since they belong to the posting rather than the person.
+
+### Card 5: Compose (`ComposeCard.jsx`)
+
+Both ways of producing something sendable, side by side: `Draft outreach` (purple) and `Generate pitch` (coral).
+
+**Context changes emphasis, never availability.** Both buttons are always rendered and always clickable; only the variant changes:
+
+```js
+const hasContact = Boolean(contact.name?.trim());
+const hasPosting = Boolean(analysis);
+const outreachPrimary = hasContact;
+const pitchPrimary = hasPosting && !hasContact;
+```
+
+The primary button gets its accent variant, the other gets `default`. Neither is ever disabled. Disabling would guess at intent, and the guess is wrong often enough (a pitch for a posting you also have a contact at; outreach to someone found without a posting) that a wrong guess costs more than a soft hint.
+
+A single muted helper line below the buttons changes with context:
+
+| Condition | Helper line |
+|-----------|-------------|
+| contact + posting | "Draft outreach to reach this person directly, or generate a pitch to apply to the posting." |
+| contact only | "Copies a prompt for your Claude project to write the message." |
+| posting only | "Writes a pitch you can paste straight into the posting." |
+| neither | "Add a contact or analyze a posting to compose." |
+
+**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research)` carries contact fields, the analysis summary and strengths (labeled by `posting_type`), the research notes and hook, and a suggested reference template.
+
+**Generate pitch** calls `api.generatePitch(posting, context)` where `context` is the analysis **only when `analysis.posting_type === "freelance"`**. A full-time fit analysis would feed job-hunting language into a client proposal. Only `strengths` and `gaps` are forwarded server-side; `red_flags` and `fit_score` are deliberately withheld (red flags are a walk-away signal with no place in a pitch, and a score only makes the model hedge).
+
+Both outputs render inside this card, stacked: `PromptBox` for outreach, the coral-bordered readonly textarea plus personalization notes for the pitch.
 
 ---
-
 ## API Architecture (Vercel Serverless Functions)
 
 All functions are **Edge Runtime** (`export const config = { runtime: "edge" }`) for no cold starts.
@@ -471,13 +375,23 @@ if (request.method === "OPTIONS") {
 }
 ```
 
-### `/api/analyze-jd` (POST)
+### `/api/analyze-posting` (POST)
 
-**Request:** `{ jd: string }`
+**Request:** `{ posting: string, forceType?: "full-time" | "freelance" }`
 
-**Behavior:** Call Anthropic Messages API with `claude-sonnet-4-6`, max_tokens 1000. Build the prompt server-side using `PAT_PROFILE` (also imported into `/api/lib/profile.js` so it's available server-side).
+One endpoint for both job descriptions and freelance contracts. It replaced `analyze-jd` and `analyze-contract`, which were structurally identical (same Edge runtime, same CORS/`json()`/`stripFences()` helpers, same Anthropic call, same strengths/gaps/summary shape) and differed only in rubric. Keeping them apart meant two prompts to maintain and, in the UI, a decision the user had to make before pasting.
 
-**`fit_score` is weighted across five dimensions**, and the weights are stated in the schema line so the model applies them rather than scoring on overall vibe:
+**Behavior:** Edge runtime, Anthropic `claude-sonnet-4-6`, `max_tokens` 1400 (the union schema is larger than either original). Imports `PAT_PROFILE` from `./lib/profile.js`. `FREELANCE_CRITERIA` stays a module-level constant, separate from `PAT_PROFILE`, because those criteria apply only to contract work: the rate floor and hours ceiling are edited in that one place.
+
+`forceType` is validated against the two known values and ignored otherwise, so an arbitrary string can never reach the prompt as an unvalidated instruction. When set, it both overrides detection and pins `posting_type` in the response.
+
+**Detection.** The prompt classifies before it scores:
+
+- Full-time signals: annual salary or band, benefits, PTO, equity/RSUs, "full-time", "FTE", "permanent", reporting structure, onboarding, team headcount
+- Freelance signals: hourly rate, project budget, fixed fee, "contract", "freelance", "part-time", "3 month engagement", milestone payments, statement of work, "1099"
+- **When signals conflict, payment structure wins**: an annual salary means full-time, an hourly or project rate means freelance. This is the single most reliable discriminator, and postings frequently mix the other signals.
+
+**Full-time rubric.** Five weighted dimensions:
 
 | Dimension | Weight | Field |
 |-----------|--------|-------|
@@ -487,50 +401,37 @@ if (request.method === "OPTIONS") {
 | AI environment | 15% | `ai_environment` |
 | Environment signals | 15% | `environment_signals` |
 
-**Industry fit rubric.** `industry_fit` is not a free judgment call by the model. The prompt carries an explicit target list, because left to itself the model scored on generic "is this a good design job" reasoning and kept rating telecom and B2B SaaS as strong fits:
+Industry tiers: primary (strong) travel, gaming, entertainment, e-commerce; secondary (moderate) AI, fintech; adjacent (moderate) food/QSR, media, music streaming, retail, sports; explicit mismatches telecom, B2B SaaS, insurance, ad-driven models, EdTech, healthcare, climate/energy tech. **Company size is not a disqualifier** -- the disqualifier is bureaucracy that slows shipping combined with design having no strategic voice, and the model is told to look for those signals in the posting rather than infer them from size.
 
-| Tier | Industries | `industry_fit` |
-|------|-----------|----------------|
-| Primary targets | travel, gaming, entertainment, e-commerce | `strong` |
-| Secondary targets | AI, fintech | `moderate` |
-| Adjacent consumer-facing | food/QSR, media, music streaming, retail, sports | `moderate` |
-| Explicit mismatches | telecom, B2B SaaS, insurance, ad-driven business models, EdTech, healthcare, climate/energy tech | `mismatch` |
+`strategic_fit` catches a senior-sounding title with executional duties. `ai_environment` distinguishes AI as how the team works from AI as what the company sells (the latter is `flag`). `environment_signals` is where the bureaucracy disqualifier actually gets scored.
 
-Each primary target is expanded in the prompt so the model classifies edge cases consistently (travel covers hospitality, tourism, experiences, maps/navigation, trip planning; gaming covers studios, platforms, esports, peripherals, game streaming; entertainment covers streaming, film/TV, music, live events, sports entertainment; e-commerce covers DTC, marketplaces, retail platforms, shopping tools, commerce infrastructure).
+**Freelance rubric.** `FREELANCE_CRITERIA`, unchanged from the old `analyze-contract`: $75/hr floor (fixed budgets convert to implied hourly first, and `rate_fit` scores the converted number), 20 hrs/week ceiling with required weekday daytime availability scoring as mismatch, scope against Pat's product design and front-end strengths, red flags lowering the score, and **industry at zero weight**. The industry override is load-bearing: without an explicit statement that the profile's "explicit passes" list applies to full-time career moves only, the model penalizes a well-paid B2B SaaS or insurance contract, which is wrong here. Contract work is paid work, not a career move.
 
-**Company size is NOT a disqualifier.** The prompt states this explicitly. Large companies (Google, Netflix, Spotify, Amazon, Meta, Blizzard) are valid targets. The real disqualifier is bureaucracy that slows shipping combined with design having no strategic voice, and the model is told to look for those signals in the JD rather than inferring them from the company's name or size.
+The prompt also caps `rate` and `hours` at 30 characters and gives compressed examples, because both render as badges and verbatim strings wrap the badge row onto multiple lines.
 
-**Prompt template:**
-```
-${PAT_PROFILE}
+**Response.** A discriminated union keyed on `posting_type`. Only the fields for that type are returned.
 
-Evaluate this job description for Pat.
-
-Job description:
-${jd}
-
-<industry fit rubric, target-industry expansions, the company-size override, and the
- three additional scoring dimensions with their strong/weak example phrasings>
-
-Respond ONLY with valid JSON, no markdown:
-{"fit_score":<0-100, weighted per the table above>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<specific reason Pat is a strong match -- cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch -- be concrete, not generic>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
-
-For strengths and gaps: 2-4 bullets each, specific and evidence-based. Summary should address all five dimensions. For search_titles: 3 exact LinkedIn-searchable titles to target.
+Full-time:
+```json
+{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4>"],"gaps":["<2-4>"],"summary":"<4-5 sentences>","search_titles":["<t1>","<t2>","<t3>"]}
 ```
 
-**The three signal dimensions and what each is for:**
+Freelance:
+```json
+{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","industry":"<industry, reported only>","rate":"<max 30 chars or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}
+```
 
-- `strategic_fit` (`strong|moderate|weak`) -- would Pat influence direction, or just execute? Scored from ownership language ("own the design direction", "partner with leadership") versus executional language ("execute designs", "work from provided specs"). A senior-sounding title with executional duties scores `weak`; this is the dimension that catches a "Senior Product Designer" role that is really production work.
-- `ai_environment` (`strong|neutral|flag`) -- is AI part of how the team *works*, or just what the company *sells*? `flag` is specifically for companies that mention AI only as their product or market. Pat wants teams already using AI as a thinking tool in design work, which is a different thing from an AI company.
-- `environment_signals` (`strong|neutral|warning`) -- trust, autonomy, and early design involvement. `warning` covers heavy process/documentation emphasis without autonomy language, "will be reviewed by" framing, and "support multiple stakeholders" with no ownership. This is where the bureaucracy disqualifier from the company-size override actually gets scored.
+`red_flags` stays separate from `gaps`: a gap is something to address in the pitch, a red flag is a reason to walk away.
 
-`strengths` and `gaps` replaced the earlier flat `flags` array. A flag was a one-line label with no reasoning attached; splitting it into evidence-based reasons-for and reasons-against is what makes the analysis card actionable. They render on the Outreach tab through the shared `.fit-group-strengths` / `.fit-group-gaps` classes, the same pair the contract analyzer uses.
+**The handler defends the discriminator.** The entire UI branches on `posting_type`, so a response missing it would render as neither layout. If the model returns something other than the two known values, the handler falls back to `forceType` when one was given, otherwise to `"full-time"`.
 
-**Response:** Pass through the parsed JSON object. Strip code fences if present.
+**An override replaces detection rather than arguing with it.** When `forceType` is set, the prompt omits the detection rules, the other rubric, and the other schema entirely, and states the type as already-decided. An earlier version appended an `OVERRIDE:` line to the detection section while still presenting both rubrics; a posting with strong signals for the other type won that argument every time and the override silently did nothing. Omitting the unused rubric also shortens the prompt.
 
 ### `/api/find-contacts` (GET)
 
-**Query params:** `domain` (required), `limit` (default 25)
+**Query params:** `domain` (required), `limit` (default **10**)
+
+> The limit is 10 because Pat's Hunter.io plan caps a domain-search at 10 results. Requesting more returns a `pagination_error` 400 from Hunter, which surfaces to the UI as a 502. Do not raise this without checking the plan first.
 
 **Behavior:** Sanitize domain, hit `https://api.hunter.io/v2/domain-search?domain=...&limit=...&api_key=${HUNTER_API_KEY}`, return Hunter's response as-is.
 
@@ -611,37 +512,11 @@ Document this in the README.
 
 **Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, hook }`, where `research_notes` is 2-3 sentences and `hook` is one specific real observation to open with. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
 
-### `/api/analyze-contract` (POST)
-
-**Request:** `{ contract: string }`
-
-**Behavior:** Mirror `analyze-jd.js` exactly (Edge runtime, same CORS/`json()`/`stripFences()` helpers, Anthropic `claude-sonnet-4-6`) with `max_tokens` 1000. This is the freelance counterpart to JD analysis (UC4): it triages a Contra/Upwork contract before Pat spends effort pitching it.
-
-The rubric lives in a module-level `FREELANCE_CRITERIA` constant, NOT in `PAT_PROFILE`, because these criteria apply only to contract work. The rate floor and hours ceiling are edited in that one place.
-
-**Criteria, and why they differ from the JD rubric:**
-
-| Criterion | Weight | Rule |
-|-----------|--------|------|
-| Rate | Heavy | $75/hr floor. $75+ strong, $50-75 moderate, under $50 mismatch. Fixed-price budgets convert to an implied hourly first, and `rate_fit` scores the converted number. Unstated budget is `"unstated"`, a question to ask, not a rejection. Equity-only is a mismatch AND a red flag. |
-| Time | Heavy | 20 hrs/week ceiling, alongside a full-time job. Under 20 strong, at 20 moderate, above 20 or "full-time" mismatch. Required weekday daytime availability (standups, core hours, on-call) is a mismatch. |
-| Scope | Moderate | Scored against Pat's product design and front-end strengths. Defined deliverables beat open-ended engagements. |
-| Red flags | Lowers score | Vague scope, spec/unpaid test work, equity-only, unrealistic timelines, scope-creep language, no named client, rate haggling, full-time work disguised as a contract. |
-| Industry | **Zero** | Reported only. The prompt carries an explicit override stating that the profile's "explicit passes" list applies to full-time career moves ONLY, not to contract work. Without that override the model penalizes a well-paid B2B SaaS or insurance contract, which is wrong here: contract work is paid work, not a career move. |
-
-**Response:**
-
-```json
-{"fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","industry":"<industry>","rate":"<verbatim or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<verbatim or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}
-```
-
-`red_flags` is deliberately separate from `gaps`: a gap is something to address in the pitch, a red flag is a reason to walk away.
-
 ### `/api/generate-pitch` (POST)
 
 **Request:** `{ posting: string, analysis?: object }`
 
-`analysis` is the optional result of `/api/analyze-contract`. When present, only its `strengths` and `gaps` are appended to the **user message** (never the system prompt, so the tone rules are untouched). `red_flags` and `fit_score` are deliberately NOT passed through: red flags are Pat's walk-away signal and have no place in a pitch, and a score only makes the model hedge its tone. With no `analysis`, behavior is identical to before.
+`analysis` is the optional **freelance** result of `/api/analyze-posting` (the frontend forwards it only when `posting_type === "freelance"`, so a full-time fit analysis never reaches a client proposal). When present, only its `strengths` and `gaps` are appended to the **user message** (never the system prompt, so the tone rules are untouched). `red_flags` and `fit_score` are deliberately NOT passed through: red flags are Pat's walk-away signal and have no place in a pitch, and a score only makes the model hedge its tone. With no `analysis`, behavior is identical to before.
 
 **Behavior:** Call Groq (`llama-3.3-70b-versatile`, free tier, OpenAI-compatible `chat/completions` endpoint) with a system prompt that combines `PAT_PROFILE` (imported from `lib/profile.js`) with the Contra-specific tone rules below. Groq is used here instead of Anthropic as a cost decision (see Hard Rule #7 exception); the request uses `response_format: { type: "json_object" }` to guarantee a `{ message, notes }` JSON object. The system prompt should follow this template:
 
@@ -709,9 +584,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  analyzeJD:        (jd)               => request("/api/analyze-jd",        { method: "POST", body: JSON.stringify({ jd }) }),
-  analyzeContract:  (contract)         => request("/api/analyze-contract",  { method: "POST", body: JSON.stringify({ contract }) }),
-  findContacts:     (domain, limit=25) => request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
+  analyzePosting:   (posting, forceType) => request("/api/analyze-posting", { method: "POST", body: JSON.stringify({ posting, forceType }) }),
+  findContacts:     (domain, limit=10) => request(`/api/find-contacts?domain=${encodeURIComponent(domain)}&limit=${limit}`),
   fetchLinkedIn:    (url)              => request("/api/fetch-linkedin",    { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn:   (company, titles)  => request("/api/search-linkedin",   { method: "POST", body: JSON.stringify({ company, titles }) }),
   researchPerson:   ({ url, name, company }) => request("/api/research-person", { method: "POST", body: JSON.stringify({ url, name, company }) }),
@@ -726,7 +600,7 @@ Components import `api` and call methods directly. Errors bubble up as exception
 
 ## Hunter Result Filtering & Classification (Frontend)
 
-When `findContacts` returns Hunter's response, classify and rank each contact, then **keep only design-relevant people**. `classifyTitle(title)` is a pure helper returning `{ score, contactType }`; the result mappers **drop any contact classified as "Other"** (finance, sales, engineering, marketing, ops, legal, or no title), as well as any contact with no usable name. This keeps the results to people actually worth reaching out to for design work (a company search used to surface everyone in the org, which was mostly noise). The same `classifyTitle` + Other-drop rule is reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
+These helpers live in `src/components/FindContacts.jsx`. When `findContacts` returns Hunter's response, classify and rank each contact, then **keep only design-relevant people**. `classifyTitle(title)` is a pure helper returning `{ score, contactType }`; the result mappers **drop any contact classified as "Other"** (finance, sales, engineering, marketing, ops, legal, or no title), as well as any contact with no usable name. This keeps the results to people actually worth reaching out to for design work (a company search used to surface everyone in the org, which was mostly noise). The same `classifyTitle` + Other-drop rule is reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
 
 **Six categories (in priority order):**
 
@@ -860,23 +734,22 @@ Build these in order, with no API calls yet, so the visual layer is testable in 
 3. `Field.jsx` — label + children + optional badge
 4. `Button.jsx` — accepts variant prop, renders styled button
 5. `Badge.jsx` — accepts variant + children
-6. `Tabs.jsx` — tab bar, accepts active + onChange
-7. `FitBar.jsx` — score number + bar
-8. `ContactCard.jsx` — full contact result card
-9. `PromptBox.jsx` — copyable prompt display with select-all on click
-10. `useCopy.js` hook — wraps execCommand-based copy with copied state
+6. `FitBar.jsx` — score number + bar
+7. `ContactCard.jsx` — full contact result card
+8. `PromptBox.jsx` — copyable prompt display with select-all on click
+9. `useCopy.js` hook — wraps execCommand-based copy with copied state
 
-### Phase 3: Tab Layouts (no API yet)
+### Phase 3: Card Layouts (no API yet)
 
-11. `OutreachTab.jsx` — full UI with all state, but API calls just throw "not implemented"
-12. `PitchTab.jsx` — full UI with all state, same approach
-13. `App.jsx` — root with Tabs + active tab
+10. `PostingAnalyzer.jsx`, `FindContacts.jsx`, `ComposeCard.jsx` — card UI with props only, API calls throwing "not implemented"
+11. `Dashboard.jsx` — owns all shared state, renders the five cards in fixed order
+12. `App.jsx` — root wrapper rendering `<Dashboard />`
 
 At this point, run `npm run dev` and verify all visuals match the dark theme spec, all interactions work locally (typing, selecting, etc), and there are no console errors.
 
 ### Phase 4: Backend Functions
 
-Build all six `/api/*` endpoints. Test each one independently by hitting it with curl or the browser before wiring it to the frontend. Functions should:
+Build all seven `/api/*` endpoints. Test each one independently by hitting it with curl or the browser before wiring it to the frontend. Functions should:
 
 - Use Edge Runtime
 - Set CORS headers
@@ -886,9 +759,9 @@ Build all six `/api/*` endpoints. Test each one independently by hitting it with
 
 ### Phase 5: Wiring
 
-14. Build `src/lib/api.js`
-15. Wire each component method to the API client
-16. Add error handling: every API call wrapped in try/catch, errors shown in the appropriate notice box
+13. Build `src/lib/api.js`
+14. Wire each component method to the API client
+15. Add error handling: every API call wrapped in try/catch, errors shown in the appropriate notice box
 
 ### Phase 6: Deploy
 
@@ -915,14 +788,15 @@ These are NOT suggestions. The agent must follow them strictly.
 
    | Endpoint | Model | Why |
    |----------|-------|-----|
-   | `analyze-jd`, `analyze-contract`, `research-person` | `claude-sonnet-4-6` | Judgment and writing: scoring against a rubric, writing research notes and a hook. |
+   | `analyze-posting`, `research-person` | `claude-sonnet-4-6` | Judgment and writing: scoring against a rubric, writing research notes and a hook. |
    | `fetch-linkedin`, `search-linkedin` | `claude-haiku-4-5` | Pure field extraction from web search. Roughly 3x cheaper per token, no quality loss on this task. |
    | `generate-pitch` | Groq `llama-3.3-70b-versatile` | Cost decision, see below. |
 
    **Exception:** `generate-pitch` intentionally uses Groq's free tier (`llama-3.3-70b-versatile`, OpenAI-compatible API) instead of Anthropic. This is a deliberate cost decision, not a model substitution within an Anthropic call. It is safe because the pitch is self-contained (no web search, no Claude.ai skills/connectors) so the swap does not affect any other flow.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
-10. **The Freelance Pitch tab IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill.
+10. **Generate pitch (in the Compose card) IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill. Draft outreach, sitting right next to it in the same card, is still a pure clipboard copy.
+11. **All five cards are always visible and always in this order:** Analyze a posting, Research a person, Find contacts, Contact, Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused.
 
 ---
 

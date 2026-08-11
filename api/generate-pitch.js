@@ -63,7 +63,7 @@ export default async function handler(request) {
     return json({ error: "posting is required" }, 400);
   }
 
-  // Optional context from /api/analyze-contract. Only the strengths and gaps are
+  // Optional context from /api/analyze-posting. Only the strengths and gaps are
   // passed through: red flags are Pat's walk-away signal and have no place in a
   // pitch, and a fit score would only make the model hedge its tone.
   const strengths = analysis?.strengths?.filter(Boolean) || [];
