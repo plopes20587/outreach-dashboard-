@@ -69,10 +69,28 @@ Valid flag examples (use where applicable):
 - "Large company, no design influence signals"
 - "Agency model -- deliverable-focused, not product-focused" / "Agency model -- confirm product vs campaign focus before applying"
 
-Respond ONLY with valid JSON, no markdown:
-{"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strengths":["<specific reason Pat is a strong match — cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch — be concrete, not generic>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
+Additional scoring dimensions:
 
-For strengths and gaps: 2-4 bullets each, specific and evidence-based. For search_titles: 3 exact LinkedIn-searchable titles to target.`;
+Strategic involvement signals -- look for language indicating Pat would influence direction, not just execute it.
+Strong: "own the design direction," "partner with leadership," "define the experience," "shape product strategy," "work directly with founders," "influence roadmap"
+Weak: "execute designs," "work from provided specs," "support the design team," no mention of strategy or ownership
+Score as strategic_fit: strong|moderate|weak. Score weak if the role appears executional even when the title sounds senior.
+
+AI integration signals -- Pat wants environments already using AI as a thinking tool in design/product work, not just companies whose product is AI.
+Strong: "AI-assisted design," "use AI tools in your workflow," explicit mention of tools like Cursor, Copilot, Claude, Midjourney
+Neutral: no mention either way
+Flag: companies that mention AI only as their product or market, not as part of how the team works
+Score as ai_environment: strong|neutral|flag.
+
+Environment signals -- look for language indicating trust, autonomy, and early design involvement.
+Strong: "collaborative from ideation," "design has a seat at the table," "move fast," "autonomous team," "work directly with founders"
+Warning: heavy emphasis on process or documentation without autonomy language, "will be reviewed by" language, "support multiple stakeholders" with no ownership framing
+Score as environment_signals: strong|neutral|warning.
+
+Respond ONLY with valid JSON, no markdown:
+{"fit_score":<0-100, weighted: industry 25%, role level 20%, strategic 25%, AI environment 15%, environment signals 15%>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<specific reason Pat is a strong match -- cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch -- be concrete, not generic>"],"summary":"<4-5 sentences covering industry fit, role level, strategic involvement, AI environment, and whether Pat should pursue and why>","search_titles":["<title 1>","<title 2>","<title 3>"]}
+
+For strengths and gaps: 2-4 bullets each, specific and evidence-based. Summary should address all five dimensions. For search_titles: 3 exact LinkedIn-searchable titles to target.`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -84,7 +102,7 @@ For strengths and gaps: 2-4 bullets each, specific and evidence-based. For searc
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 800,
+        max_tokens: 1000,
         messages: [{ role: "user", content: prompt }],
       }),
     });

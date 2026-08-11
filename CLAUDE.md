@@ -239,7 +239,7 @@ The Contact card's own state (`pushing`, `notionStatus`, `outreachPrompt`) lives
 ```js
 const [jd, setJd] = useState("");
 const [analyzing, setAnalyzing] = useState(false);
-const [fit, setFit] = useState(null);  // { fit_score, company, industry, industry_fit, role_level, strengths, gaps, summary, search_titles }
+const [fit, setFit] = useState(null);  // { fit_score, company, industry, industry_fit, role_level, strategic_fit, ai_environment, environment_signals, strengths, gaps, summary, search_titles }
 const [company, setCompany] = useState("");
 const [domain, setDomain] = useState("");
 const [searching, setSearching] = useState(false);    // LinkedIn fallback
@@ -273,7 +273,8 @@ const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetc
 Visible only after analyze succeeds.
 
 - Score row: `{score}/100` (22px text) + horizontal bar (5px tall, full width). Bar color: green ≥75, amber ≥50, red <50.
-- Tags row: industry fit pill reading `{industry} -- {label}` (green/amber/red via `FIT_BADGE`, label via `FIT_LABEL` = Primary/Secondary/Mismatch), then a role level pill (blue).
+- Tags row: industry fit pill reading `{industry} -- {label}` (green/amber/red via `FIT_BADGE`, label via `FIT_LABEL` = Primary/Secondary/Mismatch), then a role level pill (blue), then up to three signal pills from the local `STRATEGIC_*` / `AI_*` / `ENV_*` maps.
+- **The signal maps deliberately omit their "no signal" cases** (`ai_environment: neutral`, `environment_signals: neutral`), so those render no pill. A pill announcing that the JD didn't mention something is noise, and the row already carries industry and role level. Rendering is guarded on the label map having an entry, not just on the field being present, so an unexpected value from the model is skipped rather than rendered as an empty badge.
 - "Why it fits" (`strengths`) in a `.fit-group-strengths` block, then "Watch-outs" (`gaps`) in `.fit-group-gaps`. Each renders only when its array is non-empty.
 - Summary in a `var(--bg-2)` box, line-height 1.7.
 - Divider.
@@ -474,7 +475,17 @@ if (request.method === "OPTIONS") {
 
 **Request:** `{ jd: string }`
 
-**Behavior:** Call Anthropic Messages API with `claude-sonnet-4-6`, max_tokens 800. Build the prompt server-side using `PAT_PROFILE` (also imported into `/api/lib/profile.js` so it's available server-side).
+**Behavior:** Call Anthropic Messages API with `claude-sonnet-4-6`, max_tokens 1000. Build the prompt server-side using `PAT_PROFILE` (also imported into `/api/lib/profile.js` so it's available server-side).
+
+**`fit_score` is weighted across five dimensions**, and the weights are stated in the schema line so the model applies them rather than scoring on overall vibe:
+
+| Dimension | Weight | Field |
+|-----------|--------|-------|
+| Industry | 25% | `industry_fit` |
+| Role level | 20% | `role_level` |
+| Strategic involvement | 25% | `strategic_fit` |
+| AI environment | 15% | `ai_environment` |
+| Environment signals | 15% | `environment_signals` |
 
 **Industry fit rubric.** `industry_fit` is not a free judgment call by the model. The prompt carries an explicit target list, because left to itself the model scored on generic "is this a good design job" reasoning and kept rating telecom and B2B SaaS as strong fits:
 
@@ -498,13 +509,20 @@ Evaluate this job description for Pat.
 Job description:
 ${jd}
 
-<industry fit rubric, target-industry expansions, and the company-size override, per the tables above>
+<industry fit rubric, target-industry expansions, the company-size override, and the
+ three additional scoring dimensions with their strong/weak example phrasings>
 
 Respond ONLY with valid JSON, no markdown:
-{"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strengths":["<specific reason Pat is a strong match — cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch — be concrete, not generic>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
+{"fit_score":<0-100, weighted per the table above>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<specific reason Pat is a strong match -- cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch -- be concrete, not generic>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
 
-For strengths and gaps: 2-4 bullets each, specific and evidence-based. For search_titles: 3 exact LinkedIn-searchable titles to target.
+For strengths and gaps: 2-4 bullets each, specific and evidence-based. Summary should address all five dimensions. For search_titles: 3 exact LinkedIn-searchable titles to target.
 ```
+
+**The three signal dimensions and what each is for:**
+
+- `strategic_fit` (`strong|moderate|weak`) -- would Pat influence direction, or just execute? Scored from ownership language ("own the design direction", "partner with leadership") versus executional language ("execute designs", "work from provided specs"). A senior-sounding title with executional duties scores `weak`; this is the dimension that catches a "Senior Product Designer" role that is really production work.
+- `ai_environment` (`strong|neutral|flag`) -- is AI part of how the team *works*, or just what the company *sells*? `flag` is specifically for companies that mention AI only as their product or market. Pat wants teams already using AI as a thinking tool in design work, which is a different thing from an AI company.
+- `environment_signals` (`strong|neutral|warning`) -- trust, autonomy, and early design involvement. `warning` covers heavy process/documentation emphasis without autonomy language, "will be reviewed by" framing, and "support multiple stakeholders" with no ownership. This is where the bureaucracy disqualifier from the company-size override actually gets scored.
 
 `strengths` and `gaps` replaced the earlier flat `flags` array. A flag was a one-line label with no reasoning attached; splitting it into evidence-based reasons-for and reasons-against is what makes the analysis card actionable. They render on the Outreach tab through the shared `.fit-group-strengths` / `.fit-group-gaps` classes, the same pair the contract analyzer uses.
 

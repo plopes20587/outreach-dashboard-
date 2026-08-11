@@ -142,6 +142,23 @@ function mergeContacts(primary, secondary) {
 const FIT_BADGE = { strong: "green", moderate: "amber", mismatch: "red" };
 const FIT_LABEL = { strong: "Primary", moderate: "Secondary", mismatch: "Mismatch" };
 
+// The three extra scoring dimensions. Each map omits its "no signal either way"
+// case (ai_environment: neutral, environment_signals: neutral) on purpose: a pill
+// that says "the JD didn't mention this" is noise, and the tags row is already
+// carrying industry and role level.
+const STRATEGIC_BADGE = { strong: "green", moderate: "amber", weak: "red" };
+const STRATEGIC_LABEL = {
+  strong: "Strategic involvement",
+  moderate: "Limited strategic scope",
+  weak: "Executional only",
+};
+
+const AI_BADGE = { strong: "green", flag: "red" };
+const AI_LABEL = { strong: "AI-integrated team", flag: "AI as product, not process" };
+
+const ENV_BADGE = { strong: "green", warning: "amber" };
+const ENV_LABEL = { strong: "Autonomous environment", warning: "Process-heavy environment" };
+
 export default function OutreachTab() {
   const [jd, setJd] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -332,6 +349,25 @@ export default function OutreachTab() {
                 {fit.industry} -- {FIT_LABEL[fit.industry_fit] || fit.industry_fit}
               </Badge>
               <Badge variant="blue">{fit.role_level}</Badge>
+              {/* Strategic involvement: is this a role with a voice, or execution only? */}
+              {fit.strategic_fit && STRATEGIC_LABEL[fit.strategic_fit] && (
+                <Badge variant={STRATEGIC_BADGE[fit.strategic_fit]}>
+                  {STRATEGIC_LABEL[fit.strategic_fit]}
+                </Badge>
+              )}
+              {/* AI environment: only strong and flag say anything useful, so
+                  "neutral" (no mention in the JD either way) renders no pill. */}
+              {fit.ai_environment && AI_LABEL[fit.ai_environment] && (
+                <Badge variant={AI_BADGE[fit.ai_environment]}>
+                  {AI_LABEL[fit.ai_environment]}
+                </Badge>
+              )}
+              {/* Same rule for environment signals: neutral is not worth a pill. */}
+              {fit.environment_signals && ENV_LABEL[fit.environment_signals] && (
+                <Badge variant={ENV_BADGE[fit.environment_signals]}>
+                  {ENV_LABEL[fit.environment_signals]}
+                </Badge>
+              )}
             </div>
             {(fit.strengths?.length > 0) && (
               <div className="fit-group fit-group-strengths">
