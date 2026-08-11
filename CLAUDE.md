@@ -239,7 +239,7 @@ The Contact card's own state (`pushing`, `notionStatus`, `outreachPrompt`) lives
 ```js
 const [jd, setJd] = useState("");
 const [analyzing, setAnalyzing] = useState(false);
-const [fit, setFit] = useState(null);  // { fit_score, company, industry, industry_fit, role_level, flags, summary, search_titles }
+const [fit, setFit] = useState(null);  // { fit_score, company, industry, industry_fit, role_level, strengths, gaps, summary, search_titles }
 const [company, setCompany] = useState("");
 const [domain, setDomain] = useState("");
 const [searching, setSearching] = useState(false);    // LinkedIn fallback
@@ -253,7 +253,7 @@ const [contact, setContact] = useState(initContact());
 const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 ```
 
-`initContact()` (exported from `ContactPanel.jsx`) returns:
+`initContact()` (exported from `src/lib/contact.js`, alongside `applyProfile()`) returns:
 
 ```js
 { name: "", company: "", title: "", location: "", email: "", linkedin: "",
@@ -273,7 +273,8 @@ const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetc
 Visible only after analyze succeeds.
 
 - Score row: `{score}/100` (22px text) + horizontal bar (5px tall, full width). Bar color: green ≥75, amber ≥50, red <50.
-- Tags row: industry fit pill (green/amber/red), role level pill (blue), and any flags (neutral).
+- Tags row: industry fit pill reading `{industry} -- {label}` (green/amber/red via `FIT_BADGE`, label via `FIT_LABEL` = Primary/Secondary/Mismatch), then a role level pill (blue).
+- "Why it fits" (`strengths`) in a `.fit-group-strengths` block, then "Watch-outs" (`gaps`) in `.fit-group-gaps`. Each renders only when its array is non-empty.
 - Summary in a `var(--bg-2)` box, line-height 1.7.
 - Divider.
 - Two-column grid: `Company` input + `Company domain (for Hunter.io)` input.
@@ -473,7 +474,20 @@ if (request.method === "OPTIONS") {
 
 **Request:** `{ jd: string }`
 
-**Behavior:** Call Anthropic Messages API with claude-sonnet-4-20250514, max_tokens 800. Build the prompt server-side using `PAT_PROFILE` (also imported into `/api/lib/profile.js` so it's available server-side).
+**Behavior:** Call Anthropic Messages API with `claude-sonnet-4-6`, max_tokens 800. Build the prompt server-side using `PAT_PROFILE` (also imported into `/api/lib/profile.js` so it's available server-side).
+
+**Industry fit rubric.** `industry_fit` is not a free judgment call by the model. The prompt carries an explicit target list, because left to itself the model scored on generic "is this a good design job" reasoning and kept rating telecom and B2B SaaS as strong fits:
+
+| Tier | Industries | `industry_fit` |
+|------|-----------|----------------|
+| Primary targets | travel, gaming, entertainment, e-commerce | `strong` |
+| Secondary targets | AI, fintech | `moderate` |
+| Adjacent consumer-facing | food/QSR, media, music streaming, retail, sports | `moderate` |
+| Explicit mismatches | telecom, B2B SaaS, insurance, ad-driven business models, EdTech, healthcare, climate/energy tech | `mismatch` |
+
+Each primary target is expanded in the prompt so the model classifies edge cases consistently (travel covers hospitality, tourism, experiences, maps/navigation, trip planning; gaming covers studios, platforms, esports, peripherals, game streaming; entertainment covers streaming, film/TV, music, live events, sports entertainment; e-commerce covers DTC, marketplaces, retail platforms, shopping tools, commerce infrastructure).
+
+**Company size is NOT a disqualifier.** The prompt states this explicitly. Large companies (Google, Netflix, Spotify, Amazon, Meta, Blizzard) are valid targets. The real disqualifier is bureaucracy that slows shipping combined with design having no strategic voice, and the model is told to look for those signals in the JD rather than inferring them from the company's name or size.
 
 **Prompt template:**
 ```
@@ -484,11 +498,15 @@ Evaluate this job description for Pat.
 Job description:
 ${jd}
 
-Respond ONLY with valid JSON, no markdown:
-{"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","flags":["<flag>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
+<industry fit rubric, target-industry expansions, and the company-size override, per the tables above>
 
-For search_titles: 3 exact LinkedIn-searchable titles to target.
+Respond ONLY with valid JSON, no markdown:
+{"fit_score":<0-100>,"company":"<exact company name from JD, empty string if unclear>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strengths":["<specific reason Pat is a strong match — cite his past work or a concrete detail from the JD>"],"gaps":["<specific concern, skill gap, or mismatch — be concrete, not generic>"],"summary":"<3-4 sentences on fit, gaps, whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}
+
+For strengths and gaps: 2-4 bullets each, specific and evidence-based. For search_titles: 3 exact LinkedIn-searchable titles to target.
 ```
+
+`strengths` and `gaps` replaced the earlier flat `flags` array. A flag was a one-line label with no reasoning attached; splitting it into evidence-based reasons-for and reasons-against is what makes the analysis card actionable. They render on the Outreach tab through the shared `.fit-group-strengths` / `.fit-group-gaps` classes, the same pair the contract analyzer uses.
 
 **Response:** Pass through the parsed JSON object. Strip code fences if present.
 
@@ -875,7 +893,15 @@ These are NOT suggestions. The agent must follow them strictly.
 4. **No localStorage in the artifact's React tree** for sensitive data. The Hunter proxy URL session storage from the previous artifact version is no longer needed since calls go to same-origin `/api/*`.
 5. **Visual fidelity matters.** This is a designer's tool. Match the dark palette and spacing exactly. Don't introduce new colors, new spacings, or different border styles.
 6. **Single-file components stay single-file.** Don't split a 50-line component into 4 files. The file structure above is the limit of how granular this should get.
-7. **Use the exact Anthropic model `claude-sonnet-4-20250514`** in all backend functions. Don't substitute a different model. **Exception:** `generate-pitch` intentionally uses Groq's free tier (`llama-3.3-70b-versatile`, OpenAI-compatible API) instead of Anthropic. This is a deliberate cost decision, not a model substitution within an Anthropic call. It is safe because the pitch is self-contained (no web search, no Claude.ai skills/connectors) so the swap does not affect any other flow.
+7. **Model choice is per-endpoint and deliberate.** Don't swap a model without a reason recorded here.
+
+   | Endpoint | Model | Why |
+   |----------|-------|-----|
+   | `analyze-jd`, `analyze-contract`, `research-person` | `claude-sonnet-4-6` | Judgment and writing: scoring against a rubric, writing research notes and a hook. |
+   | `fetch-linkedin`, `search-linkedin` | `claude-haiku-4-5` | Pure field extraction from web search. Roughly 3x cheaper per token, no quality loss on this task. |
+   | `generate-pitch` | Groq `llama-3.3-70b-versatile` | Cost decision, see below. |
+
+   **Exception:** `generate-pitch` intentionally uses Groq's free tier (`llama-3.3-70b-versatile`, OpenAI-compatible API) instead of Anthropic. This is a deliberate cost decision, not a model substitution within an Anthropic call. It is safe because the pitch is self-contained (no web search, no Claude.ai skills/connectors) so the swap does not affect any other flow.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **The Freelance Pitch tab IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill.
