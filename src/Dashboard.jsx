@@ -10,11 +10,16 @@ import ComposeCard from "./components/ComposeCard";
 
 // The whole app: one page, four cards, two columns.
 //
-// Left is what you feed in (a posting, a person); right is what comes out (the
-// contact record, the message). That split matters because the two are read at
-// different moments: you look left while gathering and right while producing,
-// and side by side you can see a search result land in the contact without
-// scrolling between them.
+// Left is the posting and what the rubric said about it. Right is the working
+// sequence: find a person, fill in their record, produce the message.
+//
+// The analysis is the only unbounded output in the app -- a real job posting
+// runs well over a screen -- so it gets a column to itself and can grow to any
+// height without displacing a step. It also reads as reference material: you
+// consult it once to decide whether to pursue, which is a different activity
+// from working through the flow beside it. An earlier version put Find people
+// under the analyzer, and a long result pushed step 2 off screen while this
+// column sat half empty.
 //
 // Dashboard owns everything shared across the cards, which is what lets a single
 // Contact card serve every input path.
@@ -214,7 +219,9 @@ export default function Dashboard() {
           step={1}
           done={postingDone}
         />
+      </div>
 
+      <div className="workspace-col">
         <FindPeople
           step={2}
           done={peopleDone}
@@ -229,9 +236,7 @@ export default function Dashboard() {
           fetching={fetching}
           fetchStatus={fetchStatus}
         />
-      </div>
 
-      <div className="workspace-col">
         <ContactPanel
           step={3}
           done={contactDone}

@@ -152,11 +152,14 @@ a:hover {
 }
 
 /* Every card body is a flow stack. Spacing between sections is the card's job,
-   not each component's, so adding a new section is correctly spaced by default. */
+   not each component's, so adding a new section is correctly spaced by default.
+   It is also a query container, so content inside can lay itself out from the
+   card's real width rather than from the viewport's. */
 .card-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  container-type: inline-size;
 }
 
 .card-step {
@@ -479,6 +482,22 @@ a:hover {
 }
 
 /* Fit bullet groups */
+/* "Why it fits" and "Watch-outs" are a pair and read best side by side, but only
+   when there is room for two comfortable measures. That is a question about the
+   card's width, not the window's, so it is a container query: a media query would
+   pair them up inside a 500px column just because the page happens to be wide.
+   Stacked, the measure is ~470px; paired inside the workspace it would be ~206px,
+   about 30 characters, which wrapped every bullet into six or seven lines. */
+.fit-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+@container (min-width: 600px) {
+  .fit-pair { grid-template-columns: 1fr 1fr; }
+}
+
 .fit-group {
   border-radius: var(--radius-sm);
   padding: 10px 12px;

@@ -229,19 +229,29 @@ Five variants: `default`, `blue` (primary), `green` (success/Notion), `purple` (
 There are no tabs. The app is one page with **four cards, always visible, in a two-column workspace**:
 
 ```
-LEFT (what you feed in)                RIGHT (what comes out)
-1. Analyze a posting                   3. Contact
-   (optional -- auto-detects              (the one shared person: fields,
-    job vs freelance contract)             research notes, Push to Notion)
+LEFT (the posting)                     RIGHT (the working sequence)
+1. Analyze a posting                   2. Find people
+   (optional -- auto-detects              (company search + direct
+    job vs freelance contract,             URL / name look-up)
+    plus its full result)
+                                       3. Contact
+                                          (the one shared person: fields,
+                                           research notes, Push to Notion)
 
-2. Find people                         4. Compose
-   (company search + direct               (Draft outreach + Generate pitch,
-    URL / name look-up)                    context-aware)
+                                       4. Compose
+                                          (Draft outreach + Generate pitch,
+                                           context-aware)
 ```
 
 **Why one page.** The two-tab split (Outreach / Freelance Pitch) forced a choice up front that the actual work does not make. The same contact, the same research, and the same posting feed both outcomes, so `ContactPanel` was rendered twice, the two analyzers were structurally identical, and "produce the thing I send" was split across two tabs. Collapsing all of it removes the routing decision and the duplication.
 
-**Why two columns.** Left is what you feed in, right is what comes out. The two are read at different moments -- you look left while gathering and right while producing -- and side by side you can watch a search result land in the Contact card without scrolling between them. Five stacked full-width cards in a 720px column made that connection invisible.
+**Why two columns.** Left is the posting and what the rubric said about it. Right is the working sequence: find a person, fill in their record, produce the message.
+
+**Why Analyze gets a column to itself.** The analysis result is the only unbounded output in the app -- a real job posting runs well over a screen -- so it needs somewhere it can grow without displacing a step. It also reads as reference material: you consult it once to decide whether to pursue, which is a different activity from working through the flow beside it. An earlier version paired Analyze with Find people in the left column and a long result pushed step 2 below the fold while the right column sat half empty.
+
+The cost is that the *empty* state is lopsided: before anything is analyzed the left column holds only a textarea and two buttons. That is cosmetic. Nothing is pushed anywhere and all four cards are on screen, and dead space only costs something when it coincides with content being pushed out of view.
+
+Find people now sits directly above the Contact card it populates, so a selected search result lands in the card immediately below it.
 
 **Why "Find people" is one card.** "Research a person" and "Find contacts" were two cards doing one job: get a person and their information. The split forced the same up-front choice the tabs did ("am I searching a company or looking up one person?"), and it duplicated both a Company input and a URL input across the two cards. Research itself is not a finding step, so its action and its output moved to the Contact card, where the person lives.
 
@@ -302,7 +312,7 @@ const [pitchError, setPitchError] = useState(null);
 
 ### Card 1: Analyze a posting (`PostingAnalyzer.jsx`)
 
-Plain titled `Card`. Textarea (9 rows), placeholder "Paste a job description or freelance contract. The type is detected automatically." Buttons: `Analyze` (blue), `Clear` (default). Results render inline.
+Plain titled `Card`. Textarea, 9 rows before an analysis and **4 rows after one** -- once there is a score the pasted posting is text you have already used, so it gives its height back to the result. It stays editable and scrollable, so re-analyzing and the type override still work off it. Placeholder "Paste a job description or freelance contract. The type is detected automatically." Buttons: `Analyze` (blue), `Clear` (default). Results render inline.
 
 The **type badge leads the `.result-head` row, next to the `FitBar`**: blue "Job posting" or coral "Freelance contract". Which rubric ran determines how every number below should be read, so the type and the score sit on one line rather than making the reader hold two facts that belong together.
 
@@ -310,10 +320,12 @@ Directly under it, a muted `.link-button` override: "Analyzed as a job posting. 
 
 Layout branches on `posting_type`:
 
-- **Full-time:** `.result-head` -> badge row (industry fit, role level, strategic fit, AI environment) -> `.grid-2` of "Why it fits" (`strengths`) and "Watch-outs" (`gaps`) -> `summary-box`
-- **Freelance:** `.result-head` -> badge row (rate, hours, scope, industry) -> `.grid-2` of "Why it's worth it" (`strengths`) and "Watch-outs" (`gaps`) -> "Red flags" (`red_flags`, only when non-empty, full width, `.fit-group-flags`) -> `summary-box`
+- **Full-time:** `.result-head` -> badge row (industry fit, role level, strategic fit, AI environment) -> `.fit-pair` of "Why it fits" (`strengths`) and "Watch-outs" (`gaps`) -> `summary-box`
+- **Freelance:** `.result-head` -> badge row (rate, hours, scope, industry) -> `.fit-pair` of "Why it's worth it" (`strengths`) and "Watch-outs" (`gaps`) -> "Red flags" (`red_flags`, only when non-empty, full width, `.fit-group-flags`) -> `summary-box`
 
-Reasons for and reasons against are a pair, so they sit **side by side in a `.grid-2`** instead of stacking into two walls of bullets. They restack on their own at the 600px breakpoint. Red flags and the summary stay full width -- a red flag is a walk-away signal and should not be scanned as one half of a pair.
+Reasons for and reasons against are a pair, so `.fit-pair` sits them side by side **when the card is wide enough for two readable measures**, and stacks them when it is not. That is a question about the card's width, not the window's, so it is a **container query** (`.card-body` carries `container-type: inline-size`; `.fit-pair` goes two-up at a 600px container width) rather than a media query. A media query cannot answer it: it would pair them inside a 500px column simply because the page happens to be wide, which is exactly the bug this replaced -- at the 1140px page width the pair rendered as two ~206px columns, about 30 characters, wrapping every bullet into six or seven lines.
+
+Red flags and the summary stay full width -- a red flag is a walk-away signal and should not be scanned as one half of a pair.
 
 Badge maps are local to this component and **must not be shared across the two layouts**:
 
@@ -463,6 +475,8 @@ Industry tiers: primary (strong) travel, gaming, entertainment, e-commerce; seco
 - **Industry at zero weight.** The override is load-bearing: without an explicit statement that the profile's "explicit passes" list applies to full-time career moves only, the model penalizes a well-paid B2B SaaS or insurance contract, which is wrong here. Contract work is paid work, not a career move.
 
 The prompt also caps `rate` and `hours` at 30 characters and gives compressed examples, because both render as badges and verbatim strings wrap the badge row onto multiple lines.
+
+**`BULLET_RULES` caps every bullet at one sentence under 25 words**, and is emitted for **both** rubrics (unlike `BADGE_RULES`, which is freelance-only). Same reasoning as the badge cap: `strengths`, `gaps`, and `red_flags` render into a fixed-width card, and uncapped 40-word bullets wrapped to six or seven lines each, which made the result card taller than the screen. The cap is on the bullets only. `summary` is where depth, caveats, and reasoning belong and is deliberately left uncapped.
 
 **Response.** A discriminated union keyed on `posting_type`. Only the fields for that type are returned.
 
@@ -853,7 +867,7 @@ These are NOT suggestions. The agent must follow them strictly.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **Generate pitch (in the Compose card) IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill. Draft outreach, sitting right next to it in the same card, is still a pure clipboard copy.
-11. **All four cards are always visible, in a fixed two-column workspace:** left column Analyze a posting then Find people, right column Contact then Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused. Below the 1000px breakpoint the columns unwrap to a single column in the order Analyze, Find people, Contact, Compose.
+11. **All four cards are always visible, in a fixed two-column workspace:** left column Analyze a posting alone, right column Find people then Contact then Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused. Below the 1000px breakpoint the columns unwrap to a single column in the order Analyze, Find people, Contact, Compose.
 12. **Spacing is tokenized and owned by `Card`.** No component sets `marginTop`/`marginBottom` inline. Vertical rhythm comes from `.card-body`'s gap; use a `.divider` when a section needs a harder break. Same rule for the rest: prefer a class in `styles.css` over an inline `style` object.
 
 ---

@@ -56,8 +56,11 @@ export default function PostingAnalyzer({
   return (
     <Card title="Analyze a posting" step={step} done={done}>
       <Field>
+        {/* Once there is a score, the pasted posting is text you have already
+            used, so it gives its height back to the result. Still editable and
+            scrollable, so re-analyzing and the type override work off it. */}
         <textarea
-          rows={9}
+          rows={analysis ? 4 : 9}
           value={posting}
           onChange={(e) => setPosting(e.target.value)}
           placeholder="Paste a job description or freelance contract. The type is detected automatically."
@@ -144,9 +147,10 @@ export default function PostingAnalyzer({
           )}
 
           {/* Reasons for and reasons against are a pair, so they sit side by
-              side instead of stacking into two walls of bullets. They restack
-              on their own at the narrow breakpoint. */}
-          <div className="grid-2">
+              side when the card is wide enough for two readable measures and
+              stack when it is not. `.fit-pair` decides that from the card's own
+              width, not the window's. */}
+          <div className="fit-pair">
             {analysis.strengths?.length > 0 && (
               <div className="fit-group fit-group-strengths">
                 <div className="fit-group-label">

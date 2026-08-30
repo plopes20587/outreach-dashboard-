@@ -125,7 +125,18 @@ const FREELANCE_RUBRIC = `Score against the freelance contract scoring criteria 
 const BADGE_RULES = `The "rate" and "hours" fields are rendered as small badges in a UI, so they must be SHORT and scannable. Keep each under 30 characters. Compress rather than quote verbatim.
 Good rate values: "$95/hour", "$18,000 fixed (~$120/hr)", "Not stated", "Equity only".
 Good hours values: "15 hrs/week, 10 weeks", "12-15 hrs/week", "Full-time", "Not stated".
-Put the detail and the reasoning in strengths, gaps, and summary, not in these two fields.`;
+Put the detail and the reasoning in the summary, not in these two fields.`;
+
+// Applies to both rubrics, so it is emitted unconditionally rather than folded
+// into BADGE_RULES (which is freelance-only). Same reasoning as the badge cap:
+// these render into a fixed-width card, and an uncapped bullet wrapped to six or
+// seven lines, which pushed the rest of the flow off the screen. The cap is on
+// the bullets only; the summary is where depth belongs and stays uncapped.
+const BULLET_RULES = `Each bullet in "strengths", "gaps", and "red_flags" must be ONE sentence, under 25 words. These render as bullets in a narrow card, not as prose.
+Lead with the claim, then the evidence. Cut throat-clearing: no "It is worth noting that", no restating the posting before making the point.
+Good: "Strategic scope is real: the role asks Pat to set team standards and partner with leadership, as he did at Photon."
+Too long: the same point padded with a second clause about mentoring and a third about his current role.
+Put depth, caveats, and reasoning in the summary, which has no length cap.`;
 
 const FULLTIME_SCHEMA = `{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4 specific, evidence-based>"],"gaps":["<2-4 specific>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}`;
 
@@ -193,6 +204,8 @@ ${posting}
 ${rubricSection}
 
 Never use em dashes in any field of your response.
+
+${BULLET_RULES}
 ${wantsFreelance ? `\n${BADGE_RULES}\n` : ""}
 ${schemaSection}`;
 
