@@ -1,6 +1,5 @@
-// Returns a blank contact record. Each tab seeds its own independent `contact`
-// state from this (the Outreach tab and the Freelance Pitch tab keep separate
-// state; only the ContactPanel UI + its local actions are shared).
+// Returns a blank contact record. Dashboard holds exactly one of these, shared
+// by every input path (company search, direct look-up, manual entry).
 export function initContact() {
   return {
     name: "", company: "", title: "", location: "",
@@ -11,6 +10,7 @@ export function initContact() {
 
 // Merges the profile fields returned by fetch-linkedin / research-person into an
 // existing contact, keeping current values when the incoming field is empty.
+// Both enrichment paths share it so they cannot drift apart on which fields win.
 export function applyProfile(contact, data) {
   return {
     ...contact,

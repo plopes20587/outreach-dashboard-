@@ -42,19 +42,19 @@ const TERM_LABEL = {
   unstated: "Not stated",
 };
 
-// Card 1 of the single-page flow. Always visible. Takes any posting, detects
-// whether it is a job description or a freelance contract, and renders the
-// matching rubric's result inline. The detected type drives the layout, so the
-// type badge is rendered first: it must be obvious which rubric produced the
-// numbers below it.
+// Step 1 of the flow. Takes any posting, detects whether it is a job description
+// or a freelance contract, and renders the matching rubric's result inline. The
+// detected type drives the layout, so the type badge leads the result head next
+// to the score: it must be obvious which rubric produced the numbers.
 export default function PostingAnalyzer({
   posting, setPosting, analysis, analyzing, analyzeError, onAnalyze, onClear,
+  step, done,
 }) {
   const isFreelance = analysis?.posting_type === "freelance";
   const otherType = isFreelance ? "full-time" : "freelance";
 
   return (
-    <Card title="Analyze a posting">
+    <Card title="Analyze a posting" step={step} done={done}>
       <Field>
         <textarea
           rows={9}
@@ -63,7 +63,7 @@ export default function PostingAnalyzer({
           placeholder="Paste a job description or freelance contract. The type is detected automatically."
         />
       </Field>
-      <div className="btn-row" style={{ marginTop: 10 }}>
+      <div className="btn-row">
         <Button
           variant="blue"
           onClick={() => onAnalyze()}
@@ -77,21 +77,24 @@ export default function PostingAnalyzer({
       </div>
 
       {analyzeError && (
-        <div className="notice notice-error" style={{ marginTop: 10 }}>
-          {analyzeError}
-        </div>
+        <div className="notice notice-error">{analyzeError}</div>
       )}
 
       {analysis && (
         <>
           <div className="divider" />
 
-          {/* Which rubric ran, and the escape hatch when detection got it wrong. */}
-          <div className="tags-row">
+          {/* Which rubric ran and what it scored, on one line: the type decides
+              how every number below it should be read, so separating them made
+              the reader hold two facts that belong together. */}
+          <div className="result-head">
             <Badge variant={isFreelance ? "coral" : "blue"}>
               {isFreelance ? "Freelance contract" : "Job posting"}
             </Badge>
+            <FitBar score={analysis.fit_score} />
           </div>
+
+          {/* The escape hatch when detection got it wrong. */}
           <button
             type="button"
             className="link-button"
@@ -102,8 +105,6 @@ export default function PostingAnalyzer({
               ? "Analyzed as a freelance contract. Re-run as job posting"
               : "Analyzed as a job posting. Re-run as freelance contract"}
           </button>
-
-          <FitBar score={analysis.fit_score} />
 
           {isFreelance ? (
             <div className="tags-row">
@@ -137,25 +138,30 @@ export default function PostingAnalyzer({
             </div>
           )}
 
-          {analysis.strengths?.length > 0 && (
-            <div className="fit-group fit-group-strengths">
-              <div className="fit-group-label">
-                {isFreelance ? "Why it's worth it" : "Why it fits"}
+          {/* Reasons for and reasons against are a pair, so they sit side by
+              side instead of stacking into two walls of bullets. They restack
+              on their own at the narrow breakpoint. */}
+          <div className="grid-2">
+            {analysis.strengths?.length > 0 && (
+              <div className="fit-group fit-group-strengths">
+                <div className="fit-group-label">
+                  {isFreelance ? "Why it's worth it" : "Why it fits"}
+                </div>
+                <ul className="fit-bullets">
+                  {analysis.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
               </div>
-              <ul className="fit-bullets">
-                {analysis.strengths.map((s, i) => <li key={i}>{s}</li>)}
-              </ul>
-            </div>
-          )}
+            )}
 
-          {analysis.gaps?.length > 0 && (
-            <div className="fit-group fit-group-gaps">
-              <div className="fit-group-label">Watch-outs</div>
-              <ul className="fit-bullets">
-                {analysis.gaps.map((g, i) => <li key={i}>{g}</li>)}
-              </ul>
-            </div>
-          )}
+            {analysis.gaps?.length > 0 && (
+              <div className="fit-group fit-group-gaps">
+                <div className="fit-group-label">Watch-outs</div>
+                <ul className="fit-bullets">
+                  {analysis.gaps.map((g, i) => <li key={i}>{g}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
 
           {/* Red flags are freelance-only and get their own red styling: a gap is
               something to address in the pitch, a red flag is a reason to walk. */}

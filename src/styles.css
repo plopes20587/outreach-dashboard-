@@ -39,6 +39,12 @@
   --radius:    12px;
   --radius-md: 8px;
   --radius-sm: 6px;
+
+  --space-1:  5px;
+  --space-2:  8px;
+  --space-3: 10px;
+  --space-4: 14px;
+  --space-5: 20px;
 }
 
 *, *::before, *::after {
@@ -57,9 +63,9 @@ html, body {
 }
 
 #root {
-  max-width: 720px;
+  max-width: 1140px;
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: 28px 20px;
 }
 
 input, textarea, select {
@@ -99,7 +105,35 @@ a:hover {
 .app-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
+}
+
+/* Two-column workspace: left is what you feed in (posting, people), right is
+   what comes out (the contact, the message). Each column is its own flex stack
+   rather than grid rows, so a tall left card never drags a short right card
+   down with it. `align-items: start` keeps the columns from stretching. */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.workspace-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Below the breakpoint the columns unwrap into the original single-column
+   order: Analyze, Find people, Contact, Compose. */
+@media (max-width: 1000px) {
+  .workspace { grid-template-columns: 1fr; }
+  .grid-3    { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 600px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
 }
 
 /* Card */
@@ -113,8 +147,16 @@ a:hover {
 .card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* Every card body is a flow stack. Spacing between sections is the card's job,
+   not each component's, so adding a new section is correctly spaced by default. */
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .card-step {
@@ -126,6 +168,17 @@ a:hover {
   padding: 2px 6px;
   font-weight: 500;
   flex-shrink: 0;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* A finished step reads green at a glance. This is the only progress signal in
+   the app -- there is no separate rail, because at full width the four cards are
+   visible at once and a rail would restate what the headers already say. */
+.card-step.done {
+  background: var(--green-bg);
+  border-color: var(--green-bd);
+  color: var(--green);
 }
 
 .card-title {
@@ -165,7 +218,7 @@ a:hover {
   transform: rotate(90deg);
 }
 
-.card-optional {
+.card-note {
   font-size: 11px;
   color: var(--text-2);
   background: var(--bg-3);
@@ -181,14 +234,24 @@ a:hover {
 .divider {
   height: 0.5px;
   background: var(--border);
-  margin: 14px 0;
+  margin: 0;
 }
 
 /* Field */
 .field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-1);
+}
+
+/* An input paired with its submit button on one line. */
+.input-with-button {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.input-with-button .btn {
+  flex-shrink: 0;
 }
 
 .field-label {
@@ -203,13 +266,13 @@ a:hover {
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .grid-3 {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 /* Button */
@@ -287,7 +350,7 @@ a:hover {
 /* Button row */
 .btn-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -345,8 +408,9 @@ a:hover {
    button: the "re-run as the other type" override under the type badge. */
 .link-button {
   display: inline-block;
-  margin: 6px 0 4px;
+  margin: 0;
   padding: 0;
+  align-self: flex-start;
   background: none;
   border: none;
   font-size: 12px;
@@ -366,12 +430,24 @@ a:hover {
   cursor: default;
 }
 
+/* The analysis headline: which rubric ran, and the score it produced. */
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.result-head .fit-bar-row {
+  flex: 1;
+  min-width: 180px;
+}
+
 /* FitBar */
 .fit-bar-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
 }
 
 .fit-score {
@@ -400,14 +476,12 @@ a:hover {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
 }
 
 /* Fit bullet groups */
 .fit-group {
   border-radius: var(--radius-sm);
   padding: 10px 12px;
-  margin-bottom: 8px;
   border-left: 2px solid transparent;
 }
 .fit-group-strengths {
@@ -445,6 +519,12 @@ a:hover {
 }
 .fit-bullets li:last-child {
   margin-bottom: 0;
+}
+
+/* Summary box. `.summary-box-accent` marks the one line worth acting on (the
+   outreach hook) without nesting it inside a second container. */
+.summary-box-accent {
+  border-left: 2px solid var(--green-bd);
 }
 
 /* Summary box */
@@ -546,14 +626,30 @@ a:hover {
 .results-header {
   font-size: 12px;
   color: var(--text-2);
-  margin-bottom: 6px;
+}
+
+.results-header.muted {
+  opacity: 0.6;
+}
+
+/* Muted one-liner under a control explaining what it will do. */
+.hint {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Section label inside a card body, above a grouped set of controls. */
+.section-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 /* PromptBox */
 .prompt-box {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .prompt-box-header {
@@ -607,5 +703,20 @@ a:hover {
 .notice-info {
   background: var(--bg-2);
   border: 0.5px solid var(--border-2);
+  color: var(--text-2);
+}
+
+/* Generated pitch. Coral is the freelance accent, so the editable output that
+   goes straight into a proposal is bordered to match the button that made it. */
+.pitch-textarea {
+  border-color: var(--coral-bd);
+}
+
+.pitch-notes {
+  border: 0.5px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--text-2);
 }

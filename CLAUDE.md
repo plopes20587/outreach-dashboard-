@@ -86,22 +86,22 @@ outreach-app/
 │   └── generate-pitch.js         # POST {posting, analysis?} → calls Groq to write a freelance pitch (Contra/Upwork/etc.)
 ├── src/
 │   ├── App.jsx                   # Root wrapper; renders Dashboard (no tabs, no router)
-│   ├── Dashboard.jsx             # The single page: owns all shared state, renders the five cards in fixed order
+│   ├── Dashboard.jsx             # The single page: owns all shared state, renders the four cards in a two-column workspace
 │   ├── main.jsx                  # Vite entry
 │   ├── styles.css                # Global styles + CSS variables for theming
 │   ├── lib/
 │   │   ├── profile.js            # PAT_PROFILE constant
 │   │   ├── api.js                # Frontend wrappers for /api/* endpoints
 │   │   ├── contact.js            # initContact() blank-contact factory + applyProfile() field merge (shared)
+│   │   ├── contacts.js           # classifyTitle/classifyContact/mapLinkedInResult/mergeContacts + researchErrorMessage
 │   │   └── notion-schema.js      # Notion data source ID and field mappings
-│   ├── components/               # Cards 1-5 of the flow, plus the shared primitives
+│   ├── components/               # Cards 1-4 of the flow, plus the shared primitives
 │   │   ├── PostingAnalyzer.jsx   # Card 1: paste a posting, detected type badge + branching result layout
-│   │   ├── ResearchCard.jsx      # Card 2: self-contained person research; reports via onResult, reset by key remount
-│   │   ├── FindContacts.jsx      # Card 3: Hunter + LinkedIn-fallback search; owns classifyTitle/classifyContact/mergeContacts
-│   │   ├── ContactPanel.jsx      # Card 4: the one contact editor + Push to Notion; LinkedIn fetch status comes in via props
-│   │   ├── ComposeCard.jsx       # Card 5: Draft outreach (clipboard prompt) + Generate pitch, context-aware emphasis
+│   │   ├── FindPeople.jsx        # Card 2: company search (Hunter + LinkedIn fallback) and direct URL/name look-up
+│   │   ├── ContactPanel.jsx      # Card 3: the one contact editor + Research this person + Push to Notion
+│   │   ├── ComposeCard.jsx       # Card 4: Draft outreach (clipboard prompt) + Generate pitch, context-aware emphasis
 │   │   ├── Field.jsx             # Label + input wrapper
-│   │   ├── Card.jsx              # Card container: plain title or collapsible/optional header
+│   │   ├── Card.jsx              # Card container: step chip + title + provenance note; optional collapsible header
 │   │   ├── Button.jsx            # Variants: default, blue, green, purple, coral
 │   │   ├── Badge.jsx             # Status pills (green/amber/red/blue/coral/neutral)
 │   │   ├── ContactCard.jsx       # Selectable contact result card
@@ -183,15 +183,23 @@ Use the dark palette throughout. No light mode — single forced dark theme.
   --radius:    12px;
   --radius-md: 8px;
   --radius-sm: 6px;
+
+  --space-1:  5px;
+  --space-2:  8px;
+  --space-3: 10px;
+  --space-4: 14px;
+  --space-5: 20px;
 }
 ```
 
 ### Layout
 
 - Body: `background: var(--bg-0)`
-- Max width: 720px, centered, `padding: 24px 16px` on outer wrapper
-- Vertical stacking with 14px gap between cards
+- Max width: 1140px, centered, `padding: 28px 20px` on outer wrapper
+- `.workspace` is a two-column grid (`minmax(0,1fr)` twice, `gap: var(--space-4)`, `align-items: start`). Each column is a `.workspace-col` flex stack, not a grid row, so a tall left card never drags a short right card down with it.
 - Cards: `background: var(--bg-1)`, `border: 0.5px solid var(--border)`, `border-radius: var(--radius)`, `padding: 20px`
+- **Spacing is tokenized**: `--space-1: 5px` through `--space-5: 20px`. Components must not set `marginTop` inline. `Card` wraps its children in `.card-body` (flex column, `gap: var(--space-3)`), so vertical rhythm is the card's job and a new section is spaced correctly by default. `.divider` carries `margin: 0` for the same reason.
+- **Two breakpoints, the only ones in the file.** At `max-width: 1000px` the workspace collapses to one column (order: Analyze, Find people, Contact, Compose) and `.grid-3` drops to two-up. At `max-width: 600px` `.grid-2` and `.grid-3` both go one-up.
 
 ### Typography
 
@@ -218,23 +226,45 @@ Five variants: `default`, `blue` (primary), `green` (success/Notion), `purple` (
 
 ## Single-Page Flow
 
-There are no tabs. The app is one page with **five cards, always visible, always in this order**:
+There are no tabs. The app is one page with **four cards, always visible, in a two-column workspace**:
 
 ```
-1. Analyze a posting     (optional input -- auto-detects job vs freelance contract)
-2. Research a person     (optional input)
-3. Find contacts         (optional input)
-4. Contact               (single shared panel)
-5. Compose               (Draft outreach + Generate pitch, context-aware)
+LEFT (what you feed in)                RIGHT (what comes out)
+1. Analyze a posting                   3. Contact
+   (optional -- auto-detects              (the one shared person: fields,
+    job vs freelance contract)             research notes, Push to Notion)
+
+2. Find people                         4. Compose
+   (company search + direct               (Draft outreach + Generate pitch,
+    URL / name look-up)                    context-aware)
 ```
 
 **Why one page.** The two-tab split (Outreach / Freelance Pitch) forced a choice up front that the actual work does not make. The same contact, the same research, and the same posting feed both outcomes, so `ContactPanel` was rendered twice, the two analyzers were structurally identical, and "produce the thing I send" was split across two tabs. Collapsing all of it removes the routing decision and the duplication.
 
-Cards 1, 2, and 3 are independent optional inputs: any one of them, or none, can feed the Contact card. Card 4 is the single place a contact is edited. Card 5 is the single place something sendable is produced.
+**Why two columns.** Left is what you feed in, right is what comes out. The two are read at different moments -- you look left while gathering and right while producing -- and side by side you can watch a search result land in the Contact card without scrolling between them. Five stacked full-width cards in a 720px column made that connection invisible.
+
+**Why "Find people" is one card.** "Research a person" and "Find contacts" were two cards doing one job: get a person and their information. The split forced the same up-front choice the tabs did ("am I searching a company or looking up one person?"), and it duplicated both a Company input and a URL input across the two cards. Research itself is not a finding step, so its action and its output moved to the Contact card, where the person lives.
+
+Cards 1 and 2 are independent optional inputs: either, both, or neither can feed the Contact card. Card 3 is the single place a person is edited and researched. Card 4 is the single place something sendable is produced.
+
+### Progress and provenance
+
+`Card` takes `step` (number), `done` (bool), and `note` (string). The numbered step chip turns green when that step has produced output -- **done means it has output, not that it was visited**. `note` is a right-aligned provenance pill answering the question the old layout could not: where did this card's contents come from?
+
+| Step | `done` when | `note` |
+|------|-------------|--------|
+| 1 Analyze a posting | `Boolean(analysis)` | -- |
+| 2 Find people | search returned results, or a direct look-up succeeded | `From <org>` once the analyzer prefilled the fields |
+| 3 Contact | name and company are both filled | `contactSource`: `Hunter.io` / `LinkedIn` / `Research` |
+| 4 Compose | `outreachPrompt \|\| pitch` | -- |
+
+There is deliberately **no separate progress rail**. At full width all four cards are on screen at once, so a rail would only restate what the headers already show.
 
 ### State (in `src/Dashboard.jsx`)
 
-`Dashboard` owns everything shared across the cards. That ownership is what lets one Contact card serve all three input paths.
+`Dashboard` owns everything shared across the cards. That ownership is what lets one Contact card serve every input path.
+
+Related state is **grouped into objects with a patcher**, not held as loose `useState` calls. The old `FindContacts` took 20 props and the merged card would have taken close to 30; grouping keeps that at a readable size and means adding a field later does not thread two more props through.
 
 ```js
 // Card 1: posting analysis (analysis.posting_type is the layout discriminator)
@@ -243,43 +273,47 @@ const [analyzing, setAnalyzing] = useState(false);
 const [analysis, setAnalysis] = useState(null);
 const [analyzeError, setAnalyzeError] = useState(null);
 
-// Card 2: person research
-const [researchData, setResearchData] = useState(null);  // { research_notes, hook }
-const [researchKey, setResearchKey] = useState(0);       // bump to remount and clear
+// Card 2: finding a person -- two clusters, one object each
+const [search, setSearch] = useState({
+  company: "", domain: "", searching: false,
+  results: [], done: false, error: null, selIdx: null,
+});
+const [lookup, setLookup] = useState({
+  mode: "url", url: "", name: "", company: "",
+  loading: false, status: null, error: null,
+});
+const patchSearch = (fields) => setSearch((s) => ({ ...s, ...fields }));
+const patchLookup = (fields) => setLookup((l) => ({ ...l, ...fields }));
 
-// Card 3: contact search
-const [company, setCompany] = useState("");
-const [domain, setDomain] = useState("");
-const [searching, setSearching] = useState(false);
-const [searchResults, setSearchResults] = useState([]);
-const [searchDone, setSearchDone] = useState(false);
-const [searchError, setSearchError] = useState(null);
-const [selIdx, setSelIdx] = useState(null);
-const [manualUrl, setManualUrl] = useState("");
-
-// Card 4: the one shared contact
+// Card 3: the one shared contact, plus where its contents came from
 const [contact, setContact] = useState(initContact());
+const [contactSource, setContactSource] = useState(null);
+const [researchData, setResearchData] = useState(null);  // { research_notes, hook }
 const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 
-// Card 5: composed output
+// Card 4: composed output
 const [outreachPrompt, setOutreachPrompt] = useState(null);
 const [pitch, setPitch] = useState(null);
 const [generating, setGenerating] = useState(false);
 const [pitchError, setPitchError] = useState(null);
 ```
 
+**`runResearch(payload, resolvedLinkedin)` is the single research entry point.** Both the direct look-up in Find people and the `Research this person` button in the Contact card go through it, so `/api/research-person` is called exactly one way and its result is applied exactly one way (`applyProfile` onto the contact, notes/hook into `researchData`, `contactSource` to `"Research"`). It throws on failure and each caller renders the error where it belongs. There is no `researchKey`: research state is lifted, so Reset clears it directly rather than remounting a component.
+
 ### Card 1: Analyze a posting (`PostingAnalyzer.jsx`)
 
 Plain titled `Card`. Textarea (9 rows), placeholder "Paste a job description or freelance contract. The type is detected automatically." Buttons: `Analyze` (blue), `Clear` (default). Results render inline.
 
-The **type badge renders first**, before any numbers: blue "Job posting" or coral "Freelance contract". Which rubric ran determines the entire layout below it, so it must be unmissable.
+The **type badge leads the `.result-head` row, next to the `FitBar`**: blue "Job posting" or coral "Freelance contract". Which rubric ran determines how every number below should be read, so the type and the score sit on one line rather than making the reader hold two facts that belong together.
 
 Directly under it, a muted `.link-button` override: "Analyzed as a job posting. Re-run as freelance contract" (and vice versa). It calls `api.analyzePosting(posting, otherType)`. Detection is good, not perfect, and the override is the escape hatch.
 
 Layout branches on `posting_type`:
 
-- **Full-time:** `FitBar` -> badge row (industry fit, role level, strategic fit, AI environment) -> "Why it fits" (`strengths`) -> "Watch-outs" (`gaps`) -> `summary-box`
-- **Freelance:** `FitBar` -> badge row (rate, hours, scope, industry) -> "Why it's worth it" (`strengths`) -> "Watch-outs" (`gaps`) -> "Red flags" (`red_flags`, only when non-empty, `.fit-group-flags`) -> `summary-box`
+- **Full-time:** `.result-head` -> badge row (industry fit, role level, strategic fit, AI environment) -> `.grid-2` of "Why it fits" (`strengths`) and "Watch-outs" (`gaps`) -> `summary-box`
+- **Freelance:** `.result-head` -> badge row (rate, hours, scope, industry) -> `.grid-2` of "Why it's worth it" (`strengths`) and "Watch-outs" (`gaps`) -> "Red flags" (`red_flags`, only when non-empty, full width, `.fit-group-flags`) -> `summary-box`
+
+Reasons for and reasons against are a pair, so they sit **side by side in a `.grid-2`** instead of stacking into two walls of bullets. They restack on their own at the 600px breakpoint. Red flags and the summary stay full width -- a red flag is a walk-away signal and should not be scanned as one half of a pair.
 
 Badge maps are local to this component and **must not be shared across the two layouts**:
 
@@ -296,33 +330,46 @@ const TERM_LABEL = { strong: "Good", moderate: "Acceptable", mismatch: "Below ta
 
 Never use the industry labels on a freelance result: "Primary/Secondary/Mismatch" is industry language and says nothing about a rate.
 
-On success, `Dashboard` pre-fills the search fields: a job posting's `company` fills both `company` and a guessed `domain` (lowercased company + ".com"); a contract's `client` fills `company` only, since a client name rarely maps to a searchable domain.
+On success, `Dashboard` pre-fills the Find people search fields: a job posting's `company` fills both `search.company` and a guessed `search.domain` (lowercased company + ".com"); a contract's `client` fills `company` only, since a client name rarely maps to a searchable domain. That prefill is also what sets Find people's `From <org>` provenance note.
 
-### Card 2: Research a person (`ResearchCard.jsx`)
+### Card 2: Find people (`FindPeople.jsx`)
 
-Unchanged from the previous Freelance tab. Self-contained: owns its mode toggle (`By URL` / `By name + company`) and inputs, calls `/api/research-person`, reports up via `onResult(data, resolvedLinkedin)`. Keyed by `researchKey` so the Contact card's Reset remounts and clears it.
+The merge of the old "Research a person" and "Find contacts" cards. Finding a person is one job, so it is one card. This card only **finds** people; enriching them happens in the Contact card.
 
-### Card 3: Find contacts (`FindContacts.jsx`)
+Two sections, separated by a `.divider`:
 
-Extracted from the old OutreachTab. Two-column `Company` + `Company domain` grid, one green `Search` button.
+**A. Search a company.** Two-column `Company` + `Company domain` grid, one green `Search` button. Hunter.io runs first and renders immediately. The LinkedIn web search is slow, unreliable, and paid, so it runs **only when Hunter returns fewer than 2 contacts**, and its errors are swallowed so a LinkedIn miss never wipes out Hunter results. While it runs, a muted `.results-header.muted` "Also checking LinkedIn..." line shows above the results. Selecting a `ContactCard` fills in the Contact card.
 
-Hunter.io runs first and renders immediately. The LinkedIn web search is slow, unreliable, and paid, so it runs **only when Hunter returns fewer than 2 contacts**, and its errors are swallowed so a LinkedIn miss never wipes out Hunter results. While it runs, a muted "Also checking LinkedIn..." line shows above the results.
+**B. Or add someone directly.** **Always rendered, never toggled** -- it is the reliable path when a company search misses, and the only path for the founder/CEO case (UC2) where there is no company worth searching. One input replaces what used to be two near-identical fields across the two cards, and it routes on the URL:
 
-Every message this card can produce renders **inside this card**: search error, results list, empty state, and the manual URL entry with its own feedback. The empty state uses neutral `notice-info`, not `notice-error`, because no results is a normal outcome. Copy: "No design or recruiting contacts found for {company}. Add someone by LinkedIn URL below."
+- contains `linkedin.com/in/` -> `fetchLinkedIn(url)` (Haiku, cheap field extraction)
+- anything else (Product Hunt, Crunchbase, a company site) -> `runResearch({ url })` (Sonnet, the only endpoint that can actually read those pages)
 
-**Manual LinkedIn URL entry is always rendered** at the bottom of the card, not toggled. It is the reliable path when search misses, and hiding it behind a "None of these" toggle buried the recovery.
+A `.link-button` swaps to a `Name` + `Company` pair, which calls `runResearch({ name, company })`. That is the third of the three entry paths the two old cards had between them, preserved with one card, one mode toggle, and one Company input fewer.
 
-The `classifyTitle` / `classifyContact` / `mapLinkedInResult` / `mergeContacts` helpers live in this file.
+Every message this card can produce renders **inside this card**: search error, results list, empty state, and the look-up feedback. The empty state uses neutral `notice-info`, not `notice-error`, because no results is a normal outcome. The LinkedIn path reports through `fetchStatus` (which `fetchLinkedIn` sets rather than throwing); the research path reports through `lookup.status` / `lookup.error`.
 
-### Card 4: Contact (`ContactPanel.jsx`)
+Copy in a two-column layout must not be positional. "the contact below" became "the Contact card"; there is no "above" or "below" between columns.
 
-The one place a contact is edited, fed by any of cards 1 through 3. Field grid, LinkedIn fetch badge, and two buttons only: `Push to Notion` (green) and `Reset` (default).
+The `classifyTitle` / `classifyContact` / `mapLinkedInResult` / `mergeContacts` helpers live in **`src/lib/contacts.js`**, not in this file. They are pure functions with no React in them, and keeping them out is the difference between a ~200-line component and a ~330-line one.
 
-`Draft outreach` and its `PromptBox` moved to Compose. The prompt needs the posting analysis and the research notes as well as the contact, and building it here would have made this component reach for state it does not own.
+### Card 3: Contact (`ContactPanel.jsx`)
 
-Reset clears everything belonging to the cleared contact: the search selection, the research (inputs included, via the `researchKey` bump), and any outreach prompt. The posting analysis and generated pitch survive on purpose, since they belong to the posting rather than the person.
+The one place a person is edited **and researched**. Everything known about a contact lives here: the field grid, the LinkedIn fetch badge, the research notes, and the Notion write.
 
-### Card 5: Compose (`ComposeCard.jsx`)
+Buttons: `Research this person` (blue), `Push to Notion` (green), `Reset` (default).
+
+`Research this person` derives its payload from the contact rather than from its own inputs: a `linkedin` URL wins when there is one, otherwise `name` + `company`. It calls `Dashboard`'s shared `runResearch`, and keeps only its own `researching` / `researchError` state, since nothing outside this card reacts to them.
+
+Research output renders as `Field` label + `.summary-box` for the notes, and label + `.summary-box.summary-box-accent` for the hook. **One box per idea, never a box inside a box** -- the old Research card wrapped a `.summary-box` inside a `.fit-group`, which rendered as visible double nesting. The hook gets an accent border instead of its own container.
+
+Research lives here rather than in Find people because notes about a person belong with that person. Splitting them meant a contact's title rendered in one card and the same contact's notes in another.
+
+`Draft outreach` and its `PromptBox` are in Compose. The prompt needs the posting analysis and the research notes as well as the contact, and building it here would have made this component reach for state it does not own.
+
+Reset clears everything belonging to the cleared contact: the search selection, the direct look-up inputs, the research, the `contactSource` note, and any outreach prompt. The posting analysis and generated pitch survive on purpose, since they belong to the posting rather than the person.
+
+### Card 4: Compose (`ComposeCard.jsx`)
 
 Both ways of producing something sendable, side by side: `Draft outreach` (purple) and `Generate pitch` (coral).
 
@@ -350,7 +397,7 @@ A single muted helper line below the buttons changes with context:
 
 **Generate pitch** calls `api.generatePitch(posting, context)` where `context` is the analysis **only when `analysis.posting_type === "freelance"`**. A full-time fit analysis would feed job-hunting language into a client proposal. Only `strengths` and `gaps` are forwarded server-side; `red_flags` and `fit_score` are deliberately withheld (red flags are a walk-away signal with no place in a pitch, and a score only makes the model hedge).
 
-Both outputs render inside this card, stacked: `PromptBox` for outreach, the coral-bordered readonly textarea plus personalization notes for the pitch.
+Both outputs render inside this card, stacked: `PromptBox` for outreach, then `.pitch-textarea` (coral-bordered readonly) plus `.pitch-notes`. Those are CSS classes, not inline styles -- nothing in this card sets `style` by hand.
 
 ---
 ## API Architecture (Vercel Serverless Functions)
@@ -600,7 +647,7 @@ Components import `api` and call methods directly. Errors bubble up as exception
 
 ## Hunter Result Filtering & Classification (Frontend)
 
-These helpers live in `src/components/FindContacts.jsx`. When `findContacts` returns Hunter's response, classify and rank each contact, then **keep only design-relevant people**. `classifyTitle(title)` is a pure helper returning `{ score, contactType }`; the result mappers **drop any contact classified as "Other"** (finance, sales, engineering, marketing, ops, legal, or no title), as well as any contact with no usable name. This keeps the results to people actually worth reaching out to for design work (a company search used to surface everyone in the org, which was mostly noise). The same `classifyTitle` + Other-drop rule is reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
+These helpers live in `src/lib/contacts.js` and are imported by `FindPeople.jsx`. When `findContacts` returns Hunter's response, classify and rank each contact, then **keep only design-relevant people**. `classifyTitle(title)` is a pure helper returning `{ score, contactType }`; the result mappers **drop any contact classified as "Other"** (finance, sales, engineering, marketing, ops, legal, or no title), as well as any contact with no usable name. This keeps the results to people actually worth reaching out to for design work (a company search used to surface everyone in the org, which was mostly noise). The same `classifyTitle` + Other-drop rule is reused by both the Hunter and LinkedIn result mappers so both sources rank on one scale.
 
 **Six categories (in priority order):**
 
@@ -741,8 +788,8 @@ Build these in order, with no API calls yet, so the visual layer is testable in 
 
 ### Phase 3: Card Layouts (no API yet)
 
-10. `PostingAnalyzer.jsx`, `FindContacts.jsx`, `ComposeCard.jsx` — card UI with props only, API calls throwing "not implemented"
-11. `Dashboard.jsx` — owns all shared state, renders the five cards in fixed order
+10. `PostingAnalyzer.jsx`, `FindPeople.jsx`, `ContactPanel.jsx`, `ComposeCard.jsx` — card UI with props only, API calls throwing "not implemented"
+11. `Dashboard.jsx` — owns all shared state, renders the four cards in the two-column workspace
 12. `App.jsx` — root wrapper rendering `<Dashboard />`
 
 At this point, run `npm run dev` and verify all visuals match the dark theme spec, all interactions work locally (typing, selecting, etc), and there are no console errors.
@@ -796,7 +843,8 @@ These are NOT suggestions. The agent must follow them strictly.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **Generate pitch (in the Compose card) IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill. Draft outreach, sitting right next to it in the same card, is still a pure clipboard copy.
-11. **All five cards are always visible and always in this order:** Analyze a posting, Research a person, Find contacts, Contact, Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused.
+11. **All four cards are always visible, in a fixed two-column workspace:** left column Analyze a posting then Find people, right column Contact then Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused. Below the 1000px breakpoint the columns unwrap to a single column in the order Analyze, Find people, Contact, Compose.
+12. **Spacing is tokenized and owned by `Card`.** No component sets `marginTop`/`marginBottom` inline. Vertical rhythm comes from `.card-body`'s gap; use a `.divider` when a section needs a harder break. Same rule for the rest: prefer a class in `styles.css` over an inline `style` object.
 
 ---
 

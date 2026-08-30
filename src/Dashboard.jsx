@@ -1,47 +1,54 @@
 import { useState } from "react";
 import { api } from "./lib/api";
 import { initContact, applyProfile } from "./lib/contact";
+import { researchErrorMessage } from "./lib/contacts";
 import { useLinkedInFetch } from "./hooks/useLinkedInFetch";
 import PostingAnalyzer from "./components/PostingAnalyzer";
-import ResearchCard from "./components/ResearchCard";
-import FindContacts from "./components/FindContacts";
+import FindPeople from "./components/FindPeople";
 import ContactPanel from "./components/ContactPanel";
 import ComposeCard from "./components/ComposeCard";
 
-// The whole app: one page, five cards, fixed order, all always visible.
+// The whole app: one page, four cards, two columns.
 //
-// There are no tabs and no collapsing. The two-tab split used to force a choice
-// up front ("am I doing a job or a freelance thing?") that the work does not
-// actually make: the same contact, the same research, and the same posting feed
-// both outcomes. Dashboard owns everything shared across the five cards, which
-// is what lets a single Contact card serve all of them.
+// Left is what you feed in (a posting, a person); right is what comes out (the
+// contact record, the message). That split matters because the two are read at
+// different moments: you look left while gathering and right while producing,
+// and side by side you can see a search result land in the contact without
+// scrolling between them.
+//
+// Dashboard owns everything shared across the cards, which is what lets a single
+// Contact card serve every input path.
 export default function Dashboard() {
-  // Card 1: posting analysis. `analysis.posting_type` is the discriminator that
+  // Step 1: posting analysis. `analysis.posting_type` is the discriminator that
   // decides which rubric ran and therefore which layout renders.
   const [posting, setPosting] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [analyzeError, setAnalyzeError] = useState(null);
 
-  // Card 2: person research.
-  const [researchData, setResearchData] = useState(null); // { research_notes, hook }
-  const [researchKey, setResearchKey] = useState(0);      // bump to remount and clear
+  // Step 2: finding a person. Two related clusters, each grouped into one object
+  // instead of loose useState calls. The card that reads them took 20 props
+  // before the merge and would have taken close to 30 after; a state object plus
+  // a patcher keeps that at a readable size and means adding a field later does
+  // not mean threading two more props through.
+  const [search, setSearch] = useState({
+    company: "", domain: "", searching: false,
+    results: [], done: false, error: null, selIdx: null,
+  });
+  const [lookup, setLookup] = useState({
+    mode: "url", url: "", name: "", company: "",
+    loading: false, status: null, error: null,
+  });
+  const patchSearch = (fields) => setSearch((s) => ({ ...s, ...fields }));
+  const patchLookup = (fields) => setLookup((l) => ({ ...l, ...fields }));
 
-  // Card 3: contact search.
-  const [company, setCompany] = useState("");
-  const [domain, setDomain] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchDone, setSearchDone] = useState(false);
-  const [searchError, setSearchError] = useState(null);
-  const [selIdx, setSelIdx] = useState(null);
-  const [manualUrl, setManualUrl] = useState("");
-
-  // Card 4: the one shared contact.
+  // Step 3: the one shared contact, plus where its current contents came from.
   const [contact, setContact] = useState(initContact());
+  const [contactSource, setContactSource] = useState(null);
+  const [researchData, setResearchData] = useState(null); // { research_notes, hook }
   const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 
-  // Card 5: composed output.
+  // Step 4: composed output.
   const [outreachPrompt, setOutreachPrompt] = useState(null);
   const [pitch, setPitch] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -57,14 +64,18 @@ export default function Dashboard() {
       const data = await api.analyzePosting(posting, forceType);
       setAnalysis(data);
 
-      // Pre-fill the search fields so Find contacts is ready without retyping.
+      // Pre-fill the search fields so Find people is ready without retyping.
       // A job posting names the employer; a contract names the client.
       const org = data.posting_type === "freelance" ? data.client : data.company;
       if (org) {
-        setCompany(org);
-        if (data.posting_type !== "freelance") {
-          setDomain(org.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com");
-        }
+        patchSearch({
+          company: org,
+          // A client name rarely maps to a searchable domain, so only a job
+          // posting gets a guessed one.
+          ...(data.posting_type !== "freelance" && {
+            domain: org.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com",
+          }),
+        });
       }
     } catch (err) {
       setAnalyzeError(err.message || "Failed to analyze posting.");
@@ -79,17 +90,24 @@ export default function Dashboard() {
     setAnalyzeError(null);
   }
 
-  function handleResearchResult(data, resolvedLinkedin) {
+  // The single research entry point. Both the direct look-up in Find people and
+  // the "Research this person" button in the Contact card go through here, so
+  // the endpoint is called exactly one way and the result is applied exactly one
+  // way. Throws on failure; each caller renders the error where it belongs.
+  async function runResearch(payload, resolvedLinkedin = "") {
+    const result = await api.researchPerson(payload);
     setContact((c) => ({
-      ...applyProfile(c, data),
+      ...applyProfile(c, result),
       linkedin: resolvedLinkedin || c.linkedin,
     }));
-    setResearchData({ research_notes: data.research_notes, hook: data.hook });
+    setResearchData({ research_notes: result.research_notes, hook: result.hook });
+    setContactSource("Research");
+    return result;
   }
 
   async function handleSelectContact(idx) {
-    const result = searchResults[idx];
-    setSelIdx(idx);
+    const result = search.results[idx];
+    patchSearch({ selIdx: idx });
     setContact((c) => ({
       ...c,
       name:        result.name         || c.name,
@@ -97,22 +115,49 @@ export default function Dashboard() {
       email:       result.email        || c.email,
       linkedin:    result.linkedin     || c.linkedin,
       contactType: result.contact_type || c.contactType,
-      company:     company             || c.company,
+      company:     search.company      || c.company,
     }));
+    setContactSource(result.email ? "Hunter.io" : "LinkedIn");
     if (result.linkedin && result.linkedin.includes("linkedin.com/in/")) {
       await fetchLinkedIn(result.linkedin);
     }
   }
 
-  async function handleFetchManual() {
-    if (!manualUrl.trim()) return;
-    setContact((c) => ({ ...c, linkedin: manualUrl }));
-    await fetchLinkedIn(manualUrl);
+  // The direct-add path. One input covers what used to be two: a LinkedIn
+  // profile goes to the cheap Haiku field extraction, and anything else (Product
+  // Hunt, Crunchbase, a company site) goes to the research endpoint, which is
+  // the only one that can actually read those pages.
+  async function handleLookup() {
+    const isUrl = lookup.mode === "url";
+    const value = isUrl ? lookup.url.trim() : lookup.name.trim();
+    if (!value) return;
+
+    patchLookup({ loading: true, status: null, error: null });
+    setFetchStatus(null);
+    try {
+      if (isUrl && value.includes("linkedin.com/in/")) {
+        setContact((c) => ({ ...c, linkedin: value }));
+        // fetchLinkedIn reports its outcome through fetchStatus rather than
+        // throwing, so this path renders no lookup status of its own. It returns
+        // the outcome too, because state is not readable right after the await.
+        if (await fetchLinkedIn(value)) setContactSource("LinkedIn");
+      } else {
+        const payload = isUrl
+          ? { url: value }
+          : { name: value, company: lookup.company.trim() };
+        await runResearch(payload);
+        patchLookup({ status: "ok" });
+      }
+    } catch (err) {
+      patchLookup({ error: researchErrorMessage(err) });
+    } finally {
+      patchLookup({ loading: false });
+    }
   }
 
   async function handleGeneratePitch() {
     if (!posting.trim()) {
-      setPitchError("Paste a posting above before generating a pitch.");
+      setPitchError("Paste a posting into the Analyze card before generating a pitch.");
       return;
     }
     setGenerating(true);
@@ -131,77 +176,92 @@ export default function Dashboard() {
     }
   }
 
+  // Reset clears everything that belonged to the cleared contact: the search
+  // selection, the direct look-up inputs, the research, and any outreach prompt
+  // built from them. The posting analysis and the generated pitch survive on
+  // purpose, since they belong to the posting rather than to the person.
+  function handleResetContact() {
+    patchSearch({ selIdx: null });
+    patchLookup({ url: "", name: "", company: "", status: null, error: null });
+    setResearchData(null);
+    setContactSource(null);
+    setOutreachPrompt(null);
+  }
+
+  // Which steps have produced something. This is the whole progress model: a
+  // step is done when it has output, not when it has been visited.
+  // `contactSource` is set only by step 2's own actions, so it is the honest
+  // signal that step 2 handed a person to step 3. Keying off fetchStatus instead
+  // would light step 2 green when the Contact card's own LinkedIn field fired.
+  const postingDone = Boolean(analysis);
+  const peopleDone  = (search.done && search.results.length > 0) || Boolean(contactSource);
+  const contactDone = Boolean(contact.name.trim() && contact.company.trim());
+  const composeDone = Boolean(outreachPrompt || pitch);
+
+  const analyzedOrg = analysis?.posting_type === "freelance" ? analysis?.client : analysis?.company;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <PostingAnalyzer
-        posting={posting}
-        setPosting={setPosting}
-        analysis={analysis}
-        analyzing={analyzing}
-        analyzeError={analyzeError}
-        onAnalyze={handleAnalyze}
-        onClear={handleClearPosting}
-      />
+    <div className="workspace">
+      <div className="workspace-col">
+        <PostingAnalyzer
+          posting={posting}
+          setPosting={setPosting}
+          analysis={analysis}
+          analyzing={analyzing}
+          analyzeError={analyzeError}
+          onAnalyze={handleAnalyze}
+          onClear={handleClearPosting}
+          step={1}
+          done={postingDone}
+        />
 
-      <ResearchCard key={researchKey} onResult={handleResearchResult} />
+        <FindPeople
+          step={2}
+          done={peopleDone}
+          note={analyzedOrg ? `From ${analyzedOrg}` : undefined}
+          search={search}
+          patchSearch={patchSearch}
+          lookup={lookup}
+          patchLookup={patchLookup}
+          searchTitles={analysis?.search_titles}
+          onSelectContact={handleSelectContact}
+          onLookup={handleLookup}
+          fetching={fetching}
+          fetchStatus={fetchStatus}
+        />
+      </div>
 
-      <FindContacts
-        company={company}
-        setCompany={setCompany}
-        domain={domain}
-        setDomain={setDomain}
-        searchTitles={analysis?.search_titles}
-        onSelectContact={handleSelectContact}
-        manualUrl={manualUrl}
-        setManualUrl={setManualUrl}
-        onFetchManual={handleFetchManual}
-        fetching={fetching}
-        fetchStatus={fetchStatus}
-        setFetchStatus={setFetchStatus}
-        searching={searching}
-        setSearching={setSearching}
-        searchResults={searchResults}
-        setSearchResults={setSearchResults}
-        searchDone={searchDone}
-        setSearchDone={setSearchDone}
-        searchError={searchError}
-        setSearchError={setSearchError}
-        selIdx={selIdx}
-        setSelIdx={setSelIdx}
-      />
+      <div className="workspace-col">
+        <ContactPanel
+          step={3}
+          done={contactDone}
+          note={contactSource || undefined}
+          contact={contact}
+          setContact={setContact}
+          fetching={fetching}
+          fetchStatus={fetchStatus}
+          setFetchStatus={setFetchStatus}
+          onFetchLinkedIn={fetchLinkedIn}
+          research={researchData}
+          onResearch={runResearch}
+          onReset={handleResetContact}
+        />
 
-      <ContactPanel
-        contact={contact}
-        setContact={setContact}
-        fetching={fetching}
-        fetchStatus={fetchStatus}
-        setFetchStatus={setFetchStatus}
-        onFetchLinkedIn={fetchLinkedIn}
-        onReset={() => {
-          // Reset clears everything that belonged to the cleared contact:
-          // the search selection, the research (inputs included, via the key
-          // bump), and any outreach prompt built from them. The posting analysis
-          // and the generated pitch survive on purpose, since they belong to the
-          // posting rather than to the person.
-          setSelIdx(null);
-          setResearchData(null);
-          setResearchKey((k) => k + 1);
-          setOutreachPrompt(null);
-        }}
-      />
-
-      <ComposeCard
-        contact={contact}
-        analysis={analysis}
-        research={researchData}
-        posting={posting}
-        outreachPrompt={outreachPrompt}
-        setOutreachPrompt={setOutreachPrompt}
-        pitch={pitch}
-        generating={generating}
-        pitchError={pitchError}
-        onGeneratePitch={handleGeneratePitch}
-      />
+        <ComposeCard
+          step={4}
+          done={composeDone}
+          contact={contact}
+          analysis={analysis}
+          research={researchData}
+          posting={posting}
+          outreachPrompt={outreachPrompt}
+          setOutreachPrompt={setOutreachPrompt}
+          pitch={pitch}
+          generating={generating}
+          pitchError={pitchError}
+          onGeneratePitch={handleGeneratePitch}
+        />
+      </div>
     </div>
   );
 }

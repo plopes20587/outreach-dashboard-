@@ -1,17 +1,23 @@
 import { useState } from "react";
 
 // Card supports three header modes:
-//   1. No header        -> pass neither title nor collapsible
-//   2. Plain title       -> pass `title` (used by the always-visible Contact card)
-//   3. Collapsible title -> pass `collapsible` + `title` (used by the optional helper panels)
+//   1. No header         -> pass neither title nor collapsible
+//   2. Plain title       -> pass `title` (what all four flow cards use)
+//   3. Collapsible title -> pass `collapsible` + `title`
 //
-// Collapsible cards can be left uncontrolled (Card tracks its own open/closed
-// state via `defaultOpen`) OR controlled by the parent (pass `open` + `onToggle`).
-// The LinkedIn tab controls them so it can auto-open a panel after, say, a JD
-// analysis finishes.
+// `step` and `done` render the numbered step chip in the header, which turns
+// green once that step has produced something. That chip is the app's only
+// progress affordance: at full width all four cards are on screen at once, so a
+// separate progress rail would only restate what the headers already show.
+//
+// `note` is a right-aligned provenance pill ("From Acme Corp", "Hunter.io"). It
+// answers the question the old layout could not: where did this card's contents
+// come from? That is what makes one step visibly feed the next.
 export default function Card({
   title,
-  optional,
+  step,
+  done = false,
+  note,
   collapsible = false,
   defaultOpen = true,
   open: openProp,
@@ -29,6 +35,12 @@ export default function Card({
 
   const showBody = collapsible ? isOpen : true;
 
+  const stepChip = step != null && (
+    <span className={`card-step${done ? " done" : ""}`} aria-label={done ? "Step complete" : undefined}>
+      {done ? "✓" : step}
+    </span>
+  );
+
   return (
     <div className="card">
       {collapsible ? (
@@ -41,18 +53,20 @@ export default function Card({
           <span className={`card-chevron${isOpen ? " open" : ""}`} aria-hidden="true">
             &#9656;
           </span>
+          {stepChip}
           <span className="card-title">{title}</span>
-          {optional && <span className="card-optional">Optional</span>}
+          {note && <span className="card-note">{note}</span>}
         </button>
       ) : (
         title && (
           <div className="card-header">
+            {stepChip}
             <span className="card-title">{title}</span>
-            {optional && <span className="card-optional">Optional</span>}
+            {note && <span className="card-note">{note}</span>}
           </div>
         )
       )}
-      {showBody && children}
+      {showBody && <div className="card-body">{children}</div>}
     </div>
   );
 }

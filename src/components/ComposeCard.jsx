@@ -1,5 +1,6 @@
 import { useCopy } from "../hooks/useCopy";
 import Card from "./Card";
+import Field from "./Field";
 import Button from "./Button";
 import PromptBox from "./PromptBox";
 
@@ -60,9 +61,8 @@ function buildOutreachPrompt(contact, analysis, research) {
   return lines.join("\n");
 }
 
-// Card 5 of the single-page flow. Always visible. Both ways of producing
-// something to send live here, so the choice is a single decision in one place
-// rather than a tab switch.
+// Step 4 of the flow. Both ways of producing something to send live here, so
+// the choice is a single decision in one place rather than a tab switch.
 //
 // Context changes emphasis, never availability: both buttons stay enabled at all
 // times. Disabling one would guess at intent, and the guess is wrong often
@@ -72,6 +72,7 @@ export default function ComposeCard({
   contact, analysis, research, posting,
   outreachPrompt, setOutreachPrompt,
   pitch, generating, pitchError, onGeneratePitch,
+  step, done,
 }) {
   const [copied, copy] = useCopy();
 
@@ -90,7 +91,7 @@ export default function ComposeCard({
           : "Add a contact or analyze a posting to compose.";
 
   return (
-    <Card title="Compose">
+    <Card title="Compose" step={step} done={done}>
       <div className="btn-row">
         <Button
           variant={outreachPrimary ? "purple" : "default"}
@@ -107,43 +108,25 @@ export default function ComposeCard({
         </Button>
       </div>
 
-      <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-2)" }}>
-        {helper}
-      </div>
+      <div className="hint">{helper}</div>
 
-      {pitchError && (
-        <div className="notice notice-error" style={{ marginTop: 10 }}>
-          {pitchError}
-        </div>
-      )}
+      {pitchError && <div className="notice notice-error">{pitchError}</div>}
 
-      {outreachPrompt && (
-        <div style={{ marginTop: 14 }}>
-          <PromptBox text={outreachPrompt} />
-        </div>
-      )}
+      {outreachPrompt && <PromptBox text={outreachPrompt} />}
 
       {pitch && (
         <>
           <div className="divider" />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 10,
-            }}
-          >
-            <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              Ready to copy into your proposal
-            </span>
+
+          <div className="prompt-box-header">
+            <span className="hint">Ready to copy into your proposal</span>
             <Button variant="coral" onClick={() => copy(pitch.message)}>
               {copied ? "Copied!" : "Copy"}
             </Button>
           </div>
 
           <textarea
-            style={{ border: "0.5px solid var(--coral-bd)" }}
+            className="pitch-textarea"
             rows={10}
             value={pitch.message}
             readOnly
@@ -152,23 +135,11 @@ export default function ComposeCard({
 
           <div className="divider" />
 
-          <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 6 }}>
-            Personalization notes
-          </div>
-          <div
-            style={{
-              border: "0.5px solid var(--border-2)",
-              borderRadius: "var(--radius-sm)",
-              padding: "10px 12px",
-              fontSize: "13px",
-              lineHeight: "1.6",
-              color: "var(--text-2)",
-            }}
-          >
-            {pitch.notes}
-          </div>
+          <Field label="Personalization notes">
+            <div className="pitch-notes">{pitch.notes}</div>
+          </Field>
 
-          <div style={{ marginTop: 10 }}>
+          <div className="btn-row">
             <Button variant="coral" onClick={onGeneratePitch} disabled={generating || !posting.trim()}>
               {generating ? "Generating..." : "Regenerate"}
             </Button>
