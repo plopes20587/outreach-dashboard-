@@ -452,7 +452,15 @@ Industry tiers: primary (strong) travel, gaming, entertainment, e-commerce; seco
 
 `strategic_fit` catches a senior-sounding title with executional duties. `ai_environment` distinguishes AI as how the team works from AI as what the company sells (the latter is `flag`). `environment_signals` is where the bureaucracy disqualifier actually gets scored.
 
-**Freelance rubric.** `FREELANCE_CRITERIA`, unchanged from the old `analyze-contract`: $75/hr floor (fixed budgets convert to implied hourly first, and `rate_fit` scores the converted number), 20 hrs/week ceiling with required weekday daytime availability scoring as mismatch, scope against Pat's product design and front-end strengths, red flags lowering the score, and **industry at zero weight**. The industry override is load-bearing: without an explicit statement that the profile's "explicit passes" list applies to full-time career moves only, the model penalizes a well-paid B2B SaaS or insurance contract, which is wrong here. Contract work is paid work, not a career move.
+**Freelance rubric.** `FREELANCE_CRITERIA` tracks Pat's freelance strategy doc, which is the source of truth for the numbers below. It is a module-level constant separate from `PAT_PROFILE` precisely so those numbers are edited in one place.
+
+- **Rate.** $80/hr floor for hourly work, $750 floor for a fixed-price project. Fixed budgets are also converted to an implied hourly and sanity checked against the hourly bands; when the total clears the project floor but the implied hourly does not, the scope is too big for the budget, and `rate_fit` scores the implied hourly. `rate_fit` scores the converted number, so a fixed-price budget can be `strong`. Doubt about the hour estimate belongs in `gaps`, not in a second markdown of the same rate.
+- **Below-floor flex.** Pat will go under his floor for a genuinely strong portfolio piece (travel, gaming, entertainment, e-commerce, or anything publicly shippable and nameable). This raises `fit_score` but never `rate_fit`, which stays a pure judgment of the money: it is the one case where a `mismatch` rate can still belong to a contract worth pursuing. The rule is deliberately one-directional. Portfolio value is a reason to take an underpaid contract, never a reason to discount a well-paid one, so weak portfolio value must not be listed as a gap when the rate already clears the floor.
+- **Time.** Freelance availability is 5 to 10 hrs/week alongside the full-time job. At or under 10 is `strong`; above 10 up to 20 is `moderate` and the strain gets named in `gaps`; above 20 is `mismatch`. Required weekday daytime availability (standups, core hours, on-call) is a `mismatch` regardless of the hour count.
+- **Service tiers.** Four packages -- Design audit ($750), Landing page or marketing site ($2,500-$4,500), Product or web app UI/UX ($6,000-$10,000), Retainer ($80/hr, 5 hrs/week minimum). The matched tier is returned in `tier` and is what a quote gets built from. A budget well under its tier's range is a **gap, not a red flag**: it usually means the client underestimated the work, which is a conversation, not a walk-away. `unclear` when the posting does not describe enough to place it.
+- **Pricing model.** Fixed for defined scope, hourly for open-ended work. A mismatch between the two (an ongoing engagement at one fixed price, or a tight deliverable pinned to an hourly cap) is flagged in `gaps` as a term to renegotiate. This is separate from whether the number itself is good.
+- **Scope** against Pat's product design and front-end strengths, including Framer and Webflow builds. **Red flags** lower the score.
+- **Industry at zero weight.** The override is load-bearing: without an explicit statement that the profile's "explicit passes" list applies to full-time career moves only, the model penalizes a well-paid B2B SaaS or insurance contract, which is wrong here. Contract work is paid work, not a career move.
 
 The prompt also caps `rate` and `hours` at 30 characters and gives compressed examples, because both render as badges and verbatim strings wrap the badge row onto multiple lines.
 
@@ -465,10 +473,12 @@ Full-time:
 
 Freelance:
 ```json
-{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","industry":"<industry, reported only>","rate":"<max 30 chars or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}
+{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","tier":"Design audit|Landing page or marketing site|Product or web app UI/UX|Retainer|unclear","industry":"<industry, reported only>","rate":"<max 30 chars or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}
 ```
 
 `red_flags` stays separate from `gaps`: a gap is something to address in the pitch, a red flag is a reason to walk away.
+
+`tier` renders as a neutral badge in the freelance badge row, never a colored one. It answers "what do I quote for this?", which is a different question from "is this a good contract?", and coloring it would read as a fit judgment. It is hidden when `unclear`.
 
 **The handler defends the discriminator.** The entire UI branches on `posting_type`, so a response missing it would render as neither layout. If the model returns something other than the two known values, the handler falls back to `forceType` when one was given, otherwise to `"full-time"`.
 

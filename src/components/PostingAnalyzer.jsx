@@ -117,6 +117,11 @@ export default function PostingAnalyzer({
               <Badge variant={TERM_BADGE[analysis.scope_fit] || "neutral"}>
                 Scope -- {TERM_LABEL[analysis.scope_fit] || analysis.scope_fit}
               </Badge>
+              {/* Which service tier to quote from. Neutral on purpose: it names
+                  the package the work maps to, it does not judge the fit. */}
+              {analysis.tier && analysis.tier !== "unclear" && (
+                <Badge variant="neutral">Tier: {analysis.tier}</Badge>
+              )}
               {analysis.industry && <Badge variant="neutral">{analysis.industry}</Badge>}
             </div>
           ) : (

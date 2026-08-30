@@ -27,25 +27,45 @@ const FREELANCE_CRITERIA = `Freelance contract scoring criteria.
 These criteria are for PART-TIME contract work taken alongside a full-time job. They are deliberately different from how a full-time role would be judged.
 
 RATE AND BUDGET (heavy weight)
-Pat's rate floor is $75/hour.
-- $75/hour or above: strong
-- $50 to $75/hour: moderate
-- Below $50/hour: mismatch
-For a fixed-price budget, convert it to an implied hourly rate using the stated hours, or your best estimate of the hours the described scope would actually take, then score against the bands above. Show your conversion reasoning in the summary.
-Score rate_fit on the converted number itself. If the implied hourly clears $75, rate_fit is "strong" even when the budget is fixed-price. Doubt about whether the hour estimate will hold is a real concern, but it belongs in gaps, not in a downgraded rate_fit. Do not mark a rate down twice for the same uncertainty.
+Pat's rate floor is $80/hour for hourly work, or $750 for a fixed-price project.
+Hourly bands:
+- $80/hour or above: strong
+- $60 to $80/hour: moderate
+- Below $60/hour: mismatch
+Fixed-price project bands, judged on the total against the scope it buys:
+- $750 or above, and priced in line with the matching service tier below: strong
+- $500 to $750: moderate
+- Below $500: mismatch
+For a fixed-price budget, also convert it to an implied hourly rate using the stated hours, or your best estimate of the hours the described scope would actually take, then sanity check it against the hourly bands. Show your conversion reasoning in the summary. When the total clears the project floor but the implied hourly does not, the scope is too big for the budget: score rate_fit on the implied hourly and say so in gaps.
+Score rate_fit on the converted number itself. If the implied hourly clears $80, rate_fit is "strong" even when the budget is fixed-price. Doubt about whether the hour estimate will hold is a real concern, but it belongs in gaps, not in a downgraded rate_fit. Do not mark a rate down twice for the same uncertainty.
 If no rate or budget is stated at all, set rate_fit to "unstated". An unstated budget is a question to ask the client, NOT a rejection. Do not lower fit_score much for it.
+Below-floor flex: Pat will go under his floor for work that is a genuinely strong portfolio piece, especially in Travel, Gaming, Entertainment, or E-commerce, or where the finished work is publicly shippable and nameable. When a below-floor rate meets that bar, say so in strengths and factor it into fit_score. It does NOT raise rate_fit, which stays a pure judgment of the money. This is the one case where a "mismatch" rate can still belong to a contract worth pursuing.
+Portfolio value only ever works in Pat's favor. It is a reason to take an underpaid contract, never a reason to discount a well-paid one. When the rate already clears the floor, do NOT list weak portfolio value, internal-facing work, or an unnameable client as a gap, and do not let it lower fit_score. A contract that pays well is a good contract even when nothing about it can be shown publicly.
 Equity-only, revenue-share, "exposure", or deferred payment is a mismatch AND a red flag.
 
 TIME COMMITMENT (heavy weight)
-Pat has a full-time job. His ceiling is 20 hours per week, worked on his own schedule.
-- Under 20 hours/week: strong
-- Right at 20 hours/week: moderate
+Pat works full-time at Verizon. His freelance availability is 5 to 10 hours per week, worked on his own schedule.
+- 10 hours/week or less: strong
+- Above 10 up to 20 hours/week: moderate. This is a stretch above his stated availability, so name the strain in gaps.
 - Above 20 hours/week, "full-time", or "40 hours": mismatch
 Also score as mismatch if the contract requires weekday daytime availability: daily standups, core-hours overlap, on-call rotation, or scheduled meetings during business hours. Async and flexible-schedule work scores strong.
 If hours are not stated, set time_fit to "unstated" and estimate the realistic commitment from the described scope in the summary.
 
+SERVICE TIERS (use to set the tier field and to sanity check the budget)
+Pat sells four packages. Map the described work to the closest one and return it in the tier field.
+- "Design audit": $750 flat, 3 to 5 business days. Review of up to 5 pages or screens, annotated Figma doc, Loom walkthrough, prioritized fixes.
+- "Landing page or marketing site": $2,500 to $4,500, 2 to 3 weeks. Up to 3 pages, Figma design plus a Framer or Webflow build, 2 revision rounds, handoff call.
+- "Product or web app UI/UX": $6,000 to $10,000, 4 to 6 weeks. End-to-end UX, flows, design system, optional front-end build in React or Framer.
+- "Retainer": $80/hour, 5 hours per week minimum, monthly rolling. Ongoing features, marketing assets, design system work.
+Use "unclear" when the posting does not describe enough to place it, or when the work does not resemble any tier.
+Compare the posting's stated budget against the matched tier's price range in the summary. A budget well under its tier's range is a gap, not a red flag on its own: it usually means the client has underestimated the work, which is a conversation to have before pitching. Example: a 3-page marketing site budgeted at $900 is Tier 2 work priced near Tier 1, and that belongs in gaps.
+
+PRICING MODEL
+Pat prices fixed for defined scope and hourly for open-ended work.
+When the posting pairs an open-ended or ongoing engagement with a single fixed price, or pins a tightly defined deliverable to an hourly cap, flag it in gaps as a term to renegotiate before pitching. This is a structural mismatch in how the work is priced, separate from whether the number itself is good.
+
 SCOPE FIT (moderate weight)
-Score the work itself against Pat's actual strengths from his profile above: product design, end-to-end consumer flows, design systems, e-commerce and shopping experiences, prototyping, and production front-end (HTML, CSS, React).
+Score the work itself against Pat's actual strengths from his profile above: product design, end-to-end consumer flows, design systems, e-commerce and shopping experiences, prototyping, production front-end (HTML, CSS, React), and site builds in Framer or Webflow.
 Clearly defined deliverables with a stated timeline score higher than open-ended, ongoing, or vaguely described engagements.
 Work far outside his strengths (motion graphics, 3D, print, illustration, brand identity from scratch) is a mismatch.
 
@@ -65,6 +85,7 @@ Only list red flags that are actually present in the posting. Do not invent them
 - No named client, product, or company
 - Rate-haggling language: "looking for the best rate", "budget-friendly", "long-term potential at a lower rate to start"
 - A full-time job described as a contract to avoid paying benefits
+- A sub-$1,000 budget attached to Tier 2 or Tier 3 scope (a full marketing site or an end-to-end product UX engagement). Under-budgeting at that magnitude signals a client who will not fund the work through to a finish.
 - Requests for free work, unclear ownership or IP terms, or no contract mentioned`;
 
 const FULLTIME_RUBRIC = `Score across five dimensions:
@@ -108,7 +129,7 @@ Put the detail and the reasoning in strengths, gaps, and summary, not in these t
 
 const FULLTIME_SCHEMA = `{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4 specific, evidence-based>"],"gaps":["<2-4 specific>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}`;
 
-const FREELANCE_SCHEMA = `{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","industry":"<industry, reported only>","rate":"<max 30 chars, or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars, or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}`;
+const FREELANCE_SCHEMA = `{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","tier":"Design audit|Landing page or marketing site|Product or web app UI/UX|Retainer|unclear","industry":"<industry, reported only>","rate":"<max 30 chars, or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars, or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}`;
 
 export default async function handler(request) {
   if (request.method === "OPTIONS") {

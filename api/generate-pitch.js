@@ -36,6 +36,9 @@ Tone rules (strictly enforced):
 - The message should answer implicitly: "why do you understand my problem?" before it answers "what can you do?"
 - Lead with a specific observation about their product, UX, or problem from the posting. Not a compliment, a point of view.
 - Connect Pat's relevant past work briefly. Not a bio, a signal.
+- Never use the word "pitch" in the message. Let the framing carry the low-pressure quality instead of naming it.
+- Never write "that stuck with me" or any close variant. It reads as AI-generated.
+- Do not lead with Verizon or telecom work. Open with whichever project is most relevant to this posting: SeneGence and KFC for e-commerce, shopping, and QSR, Cellebrite for marketing sites and design systems, patlopes.com for front-end and build work. Verizon can appear later as current-role context, just not as the opening.
 - Close with a low-pressure invitation: a short conversation about fit, not a proposal.
 
 Format: 2-3 short paragraphs. No greeting header. No subject line. Under 250 words. Conversational, not formal.
