@@ -62,6 +62,9 @@ export default async function handler(request) {
     ...(contact.linkedin && { "Linkedin": { url: contact.linkedin } }),
     ...(contact.contactType && { "Contact Type": { select: { name: contact.contactType } } }),
     ...(contact.leadType    && { "Lead Type":    { select: { name: contact.leadType    } } }),
+    // Composed by the frontend from the research output. Sliced because Notion
+    // rejects a rich_text object over 2000 characters outright.
+    ...(contact.notes && { "Notes": { rich_text: [{ text: { content: String(contact.notes).slice(0, 2000) } }] } }),
     "Status": { status: { name: contact.status || "Did not send" } },
     ...(dateTriggered && {
       "Email Sent":     { date: { start: today() } },

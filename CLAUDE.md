@@ -282,6 +282,7 @@ const [posting, setPosting] = useState("");
 const [analyzing, setAnalyzing] = useState(false);
 const [analysis, setAnalysis] = useState(null);
 const [analyzeError, setAnalyzeError] = useState(null);
+const [analyzedPosting, setAnalyzedPosting] = useState(null);  // the text the analysis ran on
 
 // Card 2: finding a person -- two clusters, one object each
 const [search, setSearch] = useState({
@@ -298,7 +299,8 @@ const patchLookup = (fields) => setLookup((l) => ({ ...l, ...fields }));
 // Card 3: the one shared contact, plus where its contents came from
 const [contact, setContact] = useState(initContact());
 const [contactSource, setContactSource] = useState(null);
-const [researchData, setResearchData] = useState(null);  // { research_notes, hook }
+const [contactAnchor, setContactAnchor] = useState(null);  // the person this record is about
+const [researchData, setResearchData] = useState(null);  // { research_notes, company_context, hook }
 const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 
 // Card 4: composed output
@@ -308,11 +310,42 @@ const [generating, setGenerating] = useState(false);
 const [pitchError, setPitchError] = useState(null);
 ```
 
-**`runResearch(payload, resolvedLinkedin)` is the single research entry point.** Both the direct look-up in Find people and the `Research this person` button in the Contact card go through it, so `/api/research-person` is called exactly one way and its result is applied exactly one way (`applyProfile` onto the contact, notes/hook into `researchData`, `contactSource` to `"Research"`). It throws on failure and each caller renders the error where it belongs. There is no `researchKey`: research state is lifted, so Reset clears it directly rather than remounting a component.
+**`startContact(seed, anchor)` is the single place a person is loaded.** Every path that
+produces somebody new goes through it: selecting a search result, a direct look-up, pasting a
+different LinkedIn URL into the Contact card, and Reset. It replaces the record with a blank one
+plus `seed`, and clears `contactSource`, `researchData`, `outreachPrompt`, and `fetchStatus`.
+The posting analysis and the pitch survive, since they belong to the posting.
+
+Every path used to **merge** onto the existing contact instead (`applyProfile` only overwrites
+name/title/company/location, and `handleSelectContact` used `|| c.field` fallbacks), so loading a
+second person at the same company kept the first person's email, contact type, and research notes.
+That sent a real message to the right name at the wrong address. Merging is now reserved for
+genuine enrichment of the person already loaded.
+
+**`clearHunt()` is the same idea one level up.** It calls `startContact()` and additionally clears the
+search results, the look-up inputs, and the pitch: everything downstream of a posting. `analyzedPosting`
+holds the exact text the current analysis ran on, and is to a posting what `contactAnchor` is to a person.
+A successful analyze of *different* text clears the hunt before pre-filling the search fields; the re-run
+type override passes the same text and so keeps the person, which is correct because that is the same
+posting being re-scored. The clear fires **on success, not on click**, so a failed analyze cannot destroy
+a contact you already had.
+
+`contactAnchor` is what tells those two apart: the LinkedIn URL the record was loaded from, or
+`"<name> at <company>"` when there is no URL. A look-up whose anchor does not match it is a
+different person and starts the record over; one that matches enriches, so re-running the same URL
+never wipes an email you already have. `sameAnchor` (in `lib/contact.js`) compares LinkedIn profile
+slugs rather than raw strings, so the same person reached through a tracking-parameter URL still
+matches. The Contact card's own LinkedIn field goes through `handleContactLinkedIn`, which resets
+on an anchor mismatch but deliberately does **not** set `contactSource`: that note means step 2
+handed over this person, and typing into step 3 is not step 2 doing work.
+
+**`runResearch(payload, resolvedLinkedin)` is the single research entry point.** Both the direct look-up in Find people and the `Research this person` button in the Contact card go through it, so `/api/research-person` is called exactly one way and its result is applied exactly one way (`applyProfile` onto the contact, notes/hook into `researchData`, `contactSource` to `"Research"`). It throws on failure and each caller renders the error where it belongs. There is no `researchKey`: research state is lifted, so `startContact` clears it directly rather than remounting a component.
 
 ### Card 1: Analyze a posting (`PostingAnalyzer.jsx`)
 
-Plain titled `Card`. Textarea, 9 rows before an analysis and **4 rows after one** -- once there is a score the pasted posting is text you have already used, so it gives its height back to the result. It stays editable and scrollable, so re-analyzing and the type override still work off it. Placeholder "Paste a job description or freelance contract. The type is detected automatically." Buttons: `Analyze` (blue), `Clear` (default). Results render inline.
+Plain titled `Card`. Textarea, 9 rows before an analysis and **4 rows after one** -- once there is a score the pasted posting is text you have already used, so it gives its height back to the result. It stays editable and scrollable, so re-analyzing and the type override still work off it. Placeholder "Paste a job description or freelance contract. The type is detected automatically." Buttons: `Analyze` (blue), `Start over` (default). Results render inline.
+
+`Start over` is the app's **only** manual control that throws work away, and it clears the whole workspace, not just the textarea: the posting, the analysis, the contact, the search results, the research, the outreach prompt, and the pitch. It is labeled `Start over` rather than `Clear` for exactly that reason, and it sits at the top of the flow because that is where a new hunt begins. Analyzing a new posting does the same clear automatically, so in practice this button is for abandoning a hunt without starting another.
 
 The **type badge leads the `.result-head` row, next to the `FitBar`**: blue "Job posting" or coral "Freelance contract". Which rubric ran determines how every number below should be read, so the type and the score sit on one line rather than making the reader hold two facts that belong together.
 
@@ -369,7 +402,7 @@ The `classifyTitle` / `classifyContact` / `mapLinkedInResult` / `mergeContacts` 
 
 The one place a person is edited **and researched**. Everything known about a contact lives here: the field grid, the LinkedIn fetch badge, the research notes, and the Notion write.
 
-Buttons: `Research this person` (blue), `Push to Notion` (green), `Reset` (default).
+Buttons: `Research this person` (blue), `Push to Notion` (green). **There is no Reset button.** Every path that loads a person clears the record itself (see `startContact`), and analyzing a new posting clears the whole hunt, so a Reset button was a control that mostly did nothing while sitting where it looked like it did something important. The one deliberate cost: a hand-typed contact can only be emptied by starting over from the posting.
 
 `Research this person` derives its payload from the contact rather than from its own inputs: a `linkedin` URL wins when there is one, otherwise `name` + `company`. It calls `Dashboard`'s shared `runResearch`, and keeps only its own `researching` / `researchError` state, since nothing outside this card reacts to them.
 
@@ -379,7 +412,9 @@ Research lives here rather than in Find people because notes about a person belo
 
 `Draft outreach` and its `PromptBox` are in Compose. The prompt needs the posting analysis and the research notes as well as the contact, and building it here would have made this component reach for state it does not own.
 
-Reset clears everything belonging to the cleared contact: the search selection, the direct look-up inputs, the research, the `contactSource` note, and any outreach prompt. The posting analysis and generated pitch survive on purpose, since they belong to the posting rather than the person.
+Clearing is `Dashboard`'s job entirely. This card only clears its own local `notionStatus` and `researchError`, which it does whenever `personId` (the anchor) changes, so a "pushed to Notion" banner cannot outlive the person it referred to.
+
+`Push to Notion` sends `{ ...contact, notes: buildResearchNotes(research) }`. The research is composed into Notion's `Notes` property at push time rather than being an editable field, so nothing new appears in an already dense card and there is no fourth copy of the same text to keep in sync. `buildResearchNotes` lives in `src/lib/contact.js` and returns `""` when nothing was researched, which is the serverless function's signal to omit the property.
 
 ### Card 4: Compose (`ComposeCard.jsx`)
 
@@ -405,7 +440,7 @@ A single muted helper line below the buttons changes with context:
 | posting only | "Writes a pitch you can paste straight into the posting." |
 | neither | "Add a contact or analyze a posting to compose." |
 
-**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research)` carries contact fields, the analysis summary and strengths (labeled by `posting_type`), the research notes and hook, and a suggested reference template.
+**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research)` carries contact fields, the analysis summary and strengths (labeled by `posting_type`), the research notes, company context, and hook, and a suggested reference template.
 
 **Generate pitch** calls `api.generatePitch(posting, context)` where `context` is the analysis **only when `analysis.posting_type === "freelance"`**. A full-time fit analysis would feed job-hunting language into a client proposal. Only `strengths` and `gaps` are forwarded server-side; `red_flags` and `fit_score` are deliberately withheld (red flags are a walk-away signal with no place in a pitch, and a score only makes the model hedge).
 
@@ -537,7 +572,9 @@ This is the LinkedIn fallback when Hunter doesn't return useful results, and the
 
 ### `/api/push-notion` (POST)
 
-**Request:** `{ contact: { name, company, title, location, email, linkedin, contactType, leadType, status } }`
+**Request:** `{ contact: { name, company, title, location, email, linkedin, contactType, leadType, notes, status } }`
+
+`notes` is composed by the frontend from the research output (`buildResearchNotes`), not stored on the contact record. It is sliced to 2000 characters server-side because Notion rejects a longer `rich_text` object outright rather than truncating it.
 
 **Behavior:** Use the Notion REST API directly (NOT the MCP server, since that's an interactive tool). Required headers:
 
@@ -561,6 +598,7 @@ POST to `https://api.notion.com/v1/pages` with body:
     ...(contact.linkedin && { "Linkedin": { url: contact.linkedin } }),
     ...(contact.contactType && { "Contact Type": { select: { name: contact.contactType } } }),
     ...(contact.leadType    && { "Lead Type":    { select: { name: contact.leadType    } } }),
+    ...(contact.notes && { "Notes": { rich_text: [{ text: { content: contact.notes.slice(0, 2000) } }] } }),
     "Status": { select: { name: contact.status || "Did not send" } },
     ...((contact.status === "Email Sent" || contact.status === "Follow-up Sent") && {
       "Email Sent":     { date: { start: today() } },
@@ -581,7 +619,7 @@ Document this in the README.
 
 **Request:** `{ url?: string, name?: string, company?: string }` (at least one of `url` or `name` required)
 
-**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, hook }`, where `research_notes` is 2-3 sentences and `hook` is one specific real observation to open with. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
+**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, company_context, hook }`, where `research_notes` is 2-3 sentences on the person, `company_context` is 1-2 sentences on what the company does, its stage or size, and what it is shipping, and `hook` is one specific real observation to open with. `company_context` exists because the outreach prompt and the Notion note both want a line about the business, not only the person, and asking for it as its own field keeps it out of `research_notes`, which is about the human. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
 
 ### `/api/generate-pitch` (POST)
 
@@ -864,7 +902,7 @@ These are NOT suggestions. The agent must follow them strictly.
    | `generate-pitch` | Groq `llama-3.3-70b-versatile` | Cost decision, see below. |
 
    **Exception:** `generate-pitch` intentionally uses Groq's free tier (`llama-3.3-70b-versatile`, OpenAI-compatible API) instead of Anthropic. This is a deliberate cost decision, not a model substitution within an Anthropic call. It is safe because the pitch is self-contained (no web search, no Claude.ai skills/connectors) so the swap does not affect any other flow.
-8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
+8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Notes`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **Generate pitch (in the Compose card) IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill. Draft outreach, sitting right next to it in the same card, is still a pure clipboard copy.
 11. **All four cards are always visible, in a fixed two-column workspace:** left column Analyze a posting alone, right column Find people then Contact then Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused. Below the 1000px breakpoint the columns unwrap to a single column in the order Analyze, Find people, Contact, Compose.
@@ -902,6 +940,7 @@ Database ID: `2f312b17-d357-8155-b06f-000b29a1c83f`
 | Linkedin | URL | Optional, lowercase 'k' |
 | Contact Type | Select | Hiring Manager, Boss Hunt, Recruiter, Referral, Informational, Freelance/Client |
 | Lead Type | Select | Cold, Warm-ish, Warm |
+| Notes | Rich text | Optional, research notes + company context + hook, composed at push time |
 | Status | Select | Did not send (default), Email Sent, Follow-up Sent, Responded, No response |
 | Email Sent | Date | Auto-set when status changes to Email Sent or Follow-up Sent |
 | Follow up date | Date | Auto-set to +10 days when Email Sent date is set |

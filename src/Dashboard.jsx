@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "./lib/api";
-import { initContact, applyProfile } from "./lib/contact";
+import { initContact, applyProfile, isLinkedInProfile, sameAnchor } from "./lib/contact";
 import { researchErrorMessage } from "./lib/contacts";
 import { useLinkedInFetch } from "./hooks/useLinkedInFetch";
 import PostingAnalyzer from "./components/PostingAnalyzer";
@@ -30,6 +30,10 @@ export default function Dashboard() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [analyzeError, setAnalyzeError] = useState(null);
+  // The exact text the current analysis was run on. This is to a posting what
+  // `contactAnchor` is to a person: what tells a new posting apart from a re-run
+  // of the one already loaded.
+  const [analyzedPosting, setAnalyzedPosting] = useState(null);
 
   // Step 2: finding a person. Two related clusters, each grouped into one object
   // instead of loose useState calls. The card that reads them took 20 props
@@ -50,6 +54,10 @@ export default function Dashboard() {
   // Step 3: the one shared contact, plus where its current contents came from.
   const [contact, setContact] = useState(initContact());
   const [contactSource, setContactSource] = useState(null);
+  // Which person this record is about: a LinkedIn URL, or "name at company".
+  // Set by every path that loads someone, and compared against the next look-up
+  // so a different person replaces the record instead of merging onto it.
+  const [contactAnchor, setContactAnchor] = useState(null);
   const [researchData, setResearchData] = useState(null); // { research_notes, hook }
   const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 
@@ -62,14 +70,27 @@ export default function Dashboard() {
   // `forceType` is passed only by the re-run override in the analyzer card.
   async function handleAnalyze(forceType) {
     if (!posting.trim()) return;
+    // Captured once so a mid-request edit cannot make the comparison below
+    // target text the analysis was not actually run on.
+    const text = posting;
     setAnalyzing(true);
     setAnalyzeError(null);
     setAnalysis(null);
     try {
-      const data = await api.analyzePosting(posting, forceType);
+      const data = await api.analyzePosting(text, forceType);
       setAnalysis(data);
 
+      // A different posting is a different hunt, so everything below it goes.
+      // The re-run type override passes the same text and so keeps the person:
+      // that is the same posting being re-scored, not a new one.
+      //
+      // This fires on success rather than on click on purpose. Clearing at click
+      // time would destroy a contact you already had whenever an analyze failed.
+      if (text !== analyzedPosting) clearHunt();
+      setAnalyzedPosting(text);
+
       // Pre-fill the search fields so Find people is ready without retyping.
+      // Runs after clearHunt so the prefill lands on cleared search state.
       // A job posting names the employer; a contract names the client.
       const org = data.posting_type === "freelance" ? data.client : data.company;
       if (org) {
@@ -89,10 +110,46 @@ export default function Dashboard() {
     }
   }
 
+  // The one manual start-over in the app, and the only control that throws away
+  // work. It sits at the top of the flow because that is where a new hunt
+  // begins: a new posting means a new company, a new person, and a new message.
   function handleClearPosting() {
     setPosting("");
     setAnalysis(null);
     setAnalyzeError(null);
+    setAnalyzedPosting(null);
+    clearHunt();
+  }
+
+  // The single place a person is started. Every path that loads somebody new
+  // goes through here, so nothing from the previous contact can survive into the
+  // new record: the email, the contact type, and the research notes are cleared
+  // along with the name. Merging was how a message went out to the right name at
+  // a previous contact's email address.
+  //
+  // The outreach prompt goes too, since it was built from the person who just
+  // left. The posting analysis and the pitch stay: they belong to the posting.
+  function startContact(seed = {}, anchor = null) {
+    setContact({ ...initContact(), ...seed });
+    setContactAnchor(anchor);
+    setContactSource(null);
+    setResearchData(null);
+    setOutreachPrompt(null);
+    setFetchStatus(null);
+  }
+
+  // Everything downstream of the posting: the person, how they were found, and
+  // whatever was composed for them. Called when a new posting is analyzed and by
+  // the start-over button, since all of it belongs to the posting that just left.
+  function clearHunt() {
+    startContact();
+    patchSearch({
+      company: "", domain: "",
+      results: [], done: false, selIdx: null, error: null,
+    });
+    patchLookup({ url: "", name: "", company: "", status: null, error: null });
+    setPitch(null);
+    setPitchError(null);
   }
 
   // The single research entry point. Both the direct look-up in Find people and
@@ -105,7 +162,11 @@ export default function Dashboard() {
       ...applyProfile(c, result),
       linkedin: resolvedLinkedin || c.linkedin,
     }));
-    setResearchData({ research_notes: result.research_notes, hook: result.hook });
+    setResearchData({
+      research_notes:  result.research_notes,
+      company_context: result.company_context,
+      hook:            result.hook,
+    });
     setContactSource("Research");
     return result;
   }
@@ -113,17 +174,22 @@ export default function Dashboard() {
   async function handleSelectContact(idx) {
     const result = search.results[idx];
     patchSearch({ selIdx: idx });
-    setContact((c) => ({
-      ...c,
-      name:        result.name         || c.name,
-      title:       result.title        || c.title,
-      email:       result.email        || c.email,
-      linkedin:    result.linkedin     || c.linkedin,
-      contactType: result.contact_type || c.contactType,
-      company:     search.company      || c.company,
-    }));
+    // A different search result is a different person, so the record starts
+    // over. Picking B after A used to leave A's email in the field.
+    startContact(
+      {
+        name:        result.name         || "",
+        title:       result.title        || "",
+        email:       result.email        || "",
+        linkedin:    result.linkedin     || "",
+        contactType: result.contact_type || "",
+        company:     search.company      || "",
+      },
+      result.linkedin || `${result.name} at ${search.company}`,
+    );
     setContactSource(result.email ? "Hunter.io" : "LinkedIn");
-    if (result.linkedin && result.linkedin.includes("linkedin.com/in/")) {
+    // Enrichment of the record just created, so this one does merge.
+    if (isLinkedInProfile(result.linkedin || "")) {
       await fetchLinkedIn(result.linkedin);
     }
   }
@@ -137,11 +203,21 @@ export default function Dashboard() {
     const value = isUrl ? lookup.url.trim() : lookup.name.trim();
     if (!value) return;
 
+    // A look-up names a person, so unless it names the one already loaded it
+    // starts the record over. Re-running the same URL still enriches, which is
+    // what keeps an email you already typed for that person.
+    const anchor = isUrl ? value : `${value} at ${lookup.company.trim()}`;
+    const linkedin = isUrl && isLinkedInProfile(value) ? { linkedin: value } : {};
+    if (sameAnchor(contactAnchor, anchor)) {
+      setContact((c) => ({ ...c, ...linkedin }));
+    } else {
+      startContact(linkedin, anchor);
+    }
+
     patchLookup({ loading: true, status: null, error: null });
     setFetchStatus(null);
     try {
-      if (isUrl && value.includes("linkedin.com/in/")) {
-        setContact((c) => ({ ...c, linkedin: value }));
+      if (isUrl && isLinkedInProfile(value)) {
         // fetchLinkedIn reports its outcome through fetchStatus rather than
         // throwing, so this path renders no lookup status of its own. It returns
         // the outcome too, because state is not readable right after the await.
@@ -158,6 +234,25 @@ export default function Dashboard() {
     } finally {
       patchLookup({ loading: false });
     }
+  }
+
+  // The Contact card's own LinkedIn field. Pasting there is either filling in
+  // the URL for the person already loaded or pointing at somebody else, and the
+  // anchor is what tells them apart: a URL that does not match the loaded
+  // profile is a different person, so the record starts over. With no anchor
+  // (a contact typed by hand) the URL is taken as belonging to that person.
+  //
+  // This one deliberately leaves `contactSource` alone. That note means step 2
+  // handed over this person, and typing into step 3 is not step 2 doing work.
+  async function handleContactLinkedIn(url) {
+    const value = (url || "").trim();
+    if (!isLinkedInProfile(value)) return false;
+    if (contactAnchor && !sameAnchor(contactAnchor, value)) {
+      startContact({ linkedin: value }, value);
+    } else if (!contactAnchor) {
+      setContactAnchor(value);
+    }
+    return fetchLinkedIn(value);
   }
 
   async function handleGeneratePitch() {
@@ -179,18 +274,6 @@ export default function Dashboard() {
     } finally {
       setGenerating(false);
     }
-  }
-
-  // Reset clears everything that belonged to the cleared contact: the search
-  // selection, the direct look-up inputs, the research, and any outreach prompt
-  // built from them. The posting analysis and the generated pitch survive on
-  // purpose, since they belong to the posting rather than to the person.
-  function handleResetContact() {
-    patchSearch({ selIdx: null });
-    patchLookup({ url: "", name: "", company: "", status: null, error: null });
-    setResearchData(null);
-    setContactSource(null);
-    setOutreachPrompt(null);
   }
 
   // Which steps have produced something. This is the whole progress model: a
@@ -246,10 +329,10 @@ export default function Dashboard() {
           fetching={fetching}
           fetchStatus={fetchStatus}
           setFetchStatus={setFetchStatus}
-          onFetchLinkedIn={fetchLinkedIn}
+          onFetchLinkedIn={handleContactLinkedIn}
           research={researchData}
           onResearch={runResearch}
-          onReset={handleResetContact}
+          personId={contactAnchor}
         />
 
         <ComposeCard

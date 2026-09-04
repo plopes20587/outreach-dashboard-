@@ -19,7 +19,8 @@ function suggestTemplate(contact) {
 // outreach-composer skill and reference templates actually write the message.
 // This app intentionally does NOT generate outreach itself (CLAUDE.md Hard Rule
 // #9). `analysis` is the posting context when one was analyzed; `research` is
-// the notes and hook when a person was researched. Both are optional.
+// the notes, company context, and hook when a person was researched. Both are
+// optional.
 function buildOutreachPrompt(contact, analysis, research) {
   const lines = [];
 
@@ -47,6 +48,9 @@ function buildOutreachPrompt(contact, analysis, research) {
 
   if (research?.research_notes) {
     lines.push("", `Research on this person: ${research.research_notes}`);
+  }
+  if (research?.company_context) {
+    lines.push(`About the company: ${research.company_context}`);
   }
   if (research?.hook) {
     lines.push(`Specific hook to open with: ${research.hook}`);

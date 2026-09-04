@@ -9,6 +9,7 @@ export const NOTION_FIELDS = {
   linkedin:     "Linkedin",
   contactType:  "Contact Type",
   leadType:     "Lead Type",
+  notes:        "Notes",
   status:       "Status",
   emailSent:    "Email Sent",
   followUpDate: "Follow up date",

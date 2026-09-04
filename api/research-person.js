@@ -81,10 +81,12 @@ export default async function handler(request) {
 
 ${searchHints}
 
-Find who they are, their current role and company, where they are based, and one specific, real detail Pat could reference (a product they shipped, a recent launch, a problem their company is solving). Do not invent anything.
+Find who they are, their current role and company, what the company actually does, where they are based, and one specific, real detail Pat could reference (a product they shipped, a recent launch, a problem their company is solving). Do not invent anything.
+
+Never use em dashes in any field (CLAUDE.md Hard Rule #1). This text is read straight into an outreach prompt and into the Notion tracker, so it has to follow the same writing rules as everything else Pat sends.
 
 ALWAYS return valid JSON, no markdown. Use empty strings for fields you cannot find:
-{"first_name":"<first name>","last_name":"<last name>","title":"<current role>","company":"<current company>","location":"<city, state or country>","research_notes":"<2-3 sentences on who they are and their recent work>","hook":"<one specific, real observation Pat can open with -- a point of view, never flattery>"}
+{"first_name":"<first name>","last_name":"<last name>","title":"<current role>","company":"<current company>","location":"<city, state or country>","research_notes":"<2-3 sentences on who they are and their recent work>","company_context":"<1-2 sentences on what the company does, its stage or size, and what it is currently shipping>","hook":"<one specific, real observation Pat can open with -- a point of view, never flattery>"}
 
 Only return {"error":"not_found"} if you found absolutely nothing about this person.`;
 
@@ -133,14 +135,15 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
         : parsed.first_name || parsed.last_name || name;
 
     return json({
-      name:           fullName,
-      first_name:     parsed.first_name     || "",
-      last_name:      parsed.last_name      || "",
-      title:          parsed.title          || "",
-      company:        parsed.company        || company,
-      location:       parsed.location       || "",
-      research_notes: parsed.research_notes || "",
-      hook:           parsed.hook           || "",
+      name:            fullName,
+      first_name:      parsed.first_name      || "",
+      last_name:       parsed.last_name       || "",
+      title:           parsed.title           || "",
+      company:         parsed.company         || company,
+      location:        parsed.location        || "",
+      research_notes:  parsed.research_notes  || "",
+      company_context: parsed.company_context || "",
+      hook:            parsed.hook            || "",
     });
   } catch (err) {
     console.error("research-person:", err.message);

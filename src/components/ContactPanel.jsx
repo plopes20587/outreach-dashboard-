@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { initContact } from "../lib/contact";
+import { buildResearchNotes } from "../lib/contact";
 import { researchErrorMessage } from "../lib/contacts";
 import Card from "./Card";
 import Field from "./Field";
@@ -18,9 +18,9 @@ import Badge from "./Badge";
 // look-up path hit the endpoint exactly one way. Loading and error for that call
 // stay local, since nothing outside this card reacts to them.
 export default function ContactPanel({
-  contact, setContact, onReset,
+  contact, setContact,
   fetching, fetchStatus, setFetchStatus, onFetchLinkedIn,
-  research, onResearch,
+  research, onResearch, personId,
   step, done, note,
 }) {
   const [pushing, setPushing] = useState(false);
@@ -28,11 +28,24 @@ export default function ContactPanel({
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState(null);
 
+  // These two describe the person in the card, so they cannot outlive them. When
+  // Dashboard swaps the record for somebody else the anchor changes, and a
+  // "Contact pushed to Notion" banner left over from the previous person would
+  // read as if this one had been pushed.
+  useEffect(() => {
+    setNotionStatus(null);
+    setResearchError(null);
+  }, [personId]);
+
   async function handlePushNotion() {
     setPushing(true);
     setNotionStatus(null);
     try {
-      await api.pushNotion(contact);
+      // The research is composed into Notion's Notes property at push time, so
+      // the reasoning behind an outreach survives in the tracker instead of
+      // living only on this screen. Empty when nothing was researched, and the
+      // serverless function omits the property in that case.
+      await api.pushNotion({ ...contact, notes: buildResearchNotes(research) });
       setNotionStatus("ok");
     } catch (err) {
       console.error("pushNotion:", err.message);
@@ -61,14 +74,6 @@ export default function ContactPanel({
     } finally {
       setResearching(false);
     }
-  }
-
-  function handleReset() {
-    setContact(initContact());
-    setNotionStatus(null);
-    setFetchStatus(null);
-    setResearchError(null);
-    onReset?.();
   }
 
   const fetchBadge =
@@ -194,9 +199,6 @@ export default function ContactPanel({
         >
           {pushing ? "Pushing..." : "Push to Notion"}
         </Button>
-        <Button variant="default" onClick={handleReset}>
-          Reset
-        </Button>
       </div>
 
       {researchError && <div className="notice notice-error">{researchError}</div>}
@@ -206,6 +208,11 @@ export default function ContactPanel({
       {research?.research_notes && (
         <Field label="Research notes">
           <div className="summary-box">{research.research_notes}</div>
+        </Field>
+      )}
+      {research?.company_context && (
+        <Field label="Company context">
+          <div className="summary-box">{research.company_context}</div>
         </Field>
       )}
       {research?.hook && (

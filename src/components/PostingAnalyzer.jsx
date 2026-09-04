@@ -74,8 +74,10 @@ export default function PostingAnalyzer({
         >
           {analyzing ? "Analyzing..." : "Analyze"}
         </Button>
+        {/* Clears the whole workspace, not just this textarea, so the label
+            says so. It is the only control in the app that throws work away. */}
         <Button variant="default" onClick={onClear}>
-          Clear
+          Start over
         </Button>
       </div>
 
