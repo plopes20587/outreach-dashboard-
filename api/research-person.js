@@ -6,6 +6,10 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// The freshness levels the Contact card knows how to render. Anything else the
+// model returns is coerced to "moderate" rather than shown as an empty badge.
+const CONFIDENCE_LEVELS = ["high", "moderate", "low"];
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -83,10 +87,15 @@ ${searchHints}
 
 Find who they are, their current role and company, what the company actually does, where they are based, and one specific, real detail Pat could reference (a product they shipped, a recent launch, a problem their company is solving). Do not invent anything.
 
+Report how fresh your findings actually are. Web pages about a person are frequently out of date, and Pat needs to know when to double check a title before he sends a message:
+- as_of: the most recent date you have real evidence for on their role and company, as "YYYY-MM". Use "Unknown" when no page you read carried a date. Never guess it from today's date.
+- confidence: "high" when a current, dated source states the role; "moderate" when your sources are undated or more than a year old; "low" when the role is inferred rather than stated anywhere.
+- sources: up to 3 plain URLs of pages you actually used. Do not invent URLs.
+
 Never use em dashes in any field (CLAUDE.md Hard Rule #1). This text is read straight into an outreach prompt and into the Notion tracker, so it has to follow the same writing rules as everything else Pat sends.
 
 ALWAYS return valid JSON, no markdown. Use empty strings for fields you cannot find:
-{"first_name":"<first name>","last_name":"<last name>","title":"<current role>","company":"<current company>","location":"<city, state or country>","research_notes":"<2-3 sentences on who they are and their recent work>","company_context":"<1-2 sentences on what the company does, its stage or size, and what it is currently shipping>","hook":"<one specific, real observation Pat can open with -- a point of view, never flattery>"}
+{"first_name":"<first name>","last_name":"<last name>","title":"<current role>","company":"<current company>","location":"<city, state or country>","research_notes":"<2-3 sentences on who they are and their recent work>","company_context":"<1-2 sentences on what the company does, its stage or size, and what it is currently shipping>","hook":"<one specific, real observation Pat can open with -- a point of view, never flattery>","as_of":"<YYYY-MM or Unknown>","confidence":"high|moderate|low","sources":["<url>"]}
 
 Only return {"error":"not_found"} if you found absolutely nothing about this person.`;
 
@@ -103,7 +112,7 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
         // Kept on Sonnet: writing research_notes + a real hook needs judgment.
         // max_uses caps the paid web searches per call.
         model: "claude-sonnet-4-6",
-        max_tokens: 1000,
+        max_tokens: 1200,
         tool_choice: { type: "any" },
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
         messages: [{ role: "user", content: prompt }],
@@ -144,6 +153,12 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
       research_notes:  parsed.research_notes  || "",
       company_context: parsed.company_context || "",
       hook:            parsed.hook            || "",
+      // Freshness metadata. confidence is validated against the three known
+      // values because it drives a badge variant in the Contact card, and an
+      // unexpected string would render an uncolored pill.
+      as_of:           parsed.as_of           || "Unknown",
+      confidence:      CONFIDENCE_LEVELS.includes(parsed.confidence) ? parsed.confidence : "moderate",
+      sources:         Array.isArray(parsed.sources) ? parsed.sources.filter(Boolean).slice(0, 3) : [],
     });
   } catch (err) {
     console.error("research-person:", err.message);

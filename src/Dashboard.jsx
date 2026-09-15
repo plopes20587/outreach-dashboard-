@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "./lib/api";
-import { initContact, applyProfile, isLinkedInProfile, sameAnchor } from "./lib/contact";
+import { initContact, diffProfile, isLinkedInProfile, sameAnchor } from "./lib/contact";
 import { researchErrorMessage } from "./lib/contacts";
 import { useLinkedInFetch } from "./hooks/useLinkedInFetch";
 import PostingAnalyzer from "./components/PostingAnalyzer";
@@ -156,19 +156,44 @@ export default function Dashboard() {
   // the "Research this person" button in the Contact card go through here, so
   // the endpoint is called exactly one way and the result is applied exactly one
   // way. Throws on failure; each caller renders the error where it belongs.
+  //
+  // Research fills blanks but never overwrites. It is a web search, and the page
+  // it lands on is often an old profile or a stale press mention, so a contact
+  // that arrived correct from Hunter.io must not be quietly downgraded by it.
+  // Anything research disagrees with is kept on `profile` unapplied and surfaces
+  // in the Contact card as a suggestion Pat can accept or wave off.
   async function runResearch(payload, resolvedLinkedin = "") {
     const result = await api.researchPerson(payload);
-    setContact((c) => ({
-      ...applyProfile(c, result),
-      linkedin: resolvedLinkedin || c.linkedin,
-    }));
+    setContact((c) => {
+      const { fills } = diffProfile(c, result);
+      return { ...c, ...fills, linkedin: resolvedLinkedin || c.linkedin };
+    });
     setResearchData({
       research_notes:  result.research_notes,
       company_context: result.company_context,
       hook:            result.hook,
+      as_of:           result.as_of,
+      confidence:      result.confidence,
+      sources:         result.sources,
+      // Kept unapplied. ContactPanel diffs it against the live contact on every
+      // render rather than against a snapshot, so hand-editing a field after a
+      // research run re-raises the mismatch instead of leaving stale notes
+      // silently attached to a person they are no longer about.
+      profile: {
+        name:     result.name,
+        title:    result.title,
+        company:  result.company,
+        location: result.location,
+      },
     });
     setContactSource("Research");
     return result;
+  }
+
+  // Accepting one suggested field. The rest of the research profile stays
+  // unapplied, so this is deliberately per-field rather than an "apply all".
+  function acceptSuggestion(field, value) {
+    setContact((c) => ({ ...c, [field]: value }));
   }
 
   async function handleSelectContact(idx) {
@@ -332,6 +357,7 @@ export default function Dashboard() {
           onFetchLinkedIn={handleContactLinkedIn}
           research={researchData}
           onResearch={runResearch}
+          onAcceptSuggestion={acceptSuggestion}
           personId={contactAnchor}
         />
 

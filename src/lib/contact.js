@@ -21,6 +21,34 @@ export function applyProfile(contact, data) {
   };
 }
 
+// The four profile fields an enrichment call can speak to. Same list applyProfile
+// writes, which is the point: diffProfile is its non-destructive counterpart.
+const PROFILE_FIELDS = ["name", "title", "company", "location"];
+
+// Splits an incoming research profile against the contact already loaded:
+//   fills     - fields the contact has no value for, so writing them loses nothing
+//   conflicts - fields where research disagrees with a value already there
+//
+// Research is a web search that frequently lands on an outdated profile or an old
+// press mention, so a conflict is a question for Pat, not an instruction to the
+// record. This is why research does not go through applyProfile: a contact that
+// arrived correct from Hunter.io would be silently downgraded to older data, and
+// that stale title then flowed into the outreach prompt and into Notion.
+export function diffProfile(contact, data) {
+  const normalize = (value) => String(value || "").trim().toLowerCase();
+  const fills = {};
+  const conflicts = {};
+
+  PROFILE_FIELDS.forEach((field) => {
+    const incoming = (data?.[field] || "").trim();
+    if (!incoming) return;
+    if (!contact[field]?.trim()) fills[field] = incoming;
+    else if (normalize(contact[field]) !== normalize(incoming)) conflicts[field] = incoming;
+  });
+
+  return { fills, conflicts };
+}
+
 // True for a LinkedIn personal profile URL. The cheap Haiku extraction only
 // works on these; anything else has to go to the research endpoint.
 export function isLinkedInProfile(url = "") {
@@ -44,6 +72,22 @@ export function sameAnchor(a, b) {
   return normalize(a) === normalize(b);
 }
 
+// One line saying how old the research is and how much of it was actually
+// confirmed. It leads the Notion note for the same reason it leads the research
+// block on screen: a note read six weeks from now should say up front that its
+// claims were never verified. Returns "" when the endpoint sent no metadata.
+export function buildProvenanceLine(research) {
+  if (!research?.as_of && !research?.confidence) return "";
+  const dated = research.as_of && research.as_of !== "Unknown";
+  return [
+    `Web research${dated ? ` as of ${research.as_of}` : " (date unknown)"}`,
+    research.confidence ? `confidence: ${research.confidence}` : "",
+    "not verified, so check the title before sending.",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 // Composes the research into the plain-text value for Notion's Notes property,
 // so the reasoning behind an outreach survives in the tracker rather than living
 // only on screen. Returns "" when nothing was researched, which is the caller's
@@ -54,6 +98,7 @@ export function sameAnchor(a, b) {
 export function buildResearchNotes(research) {
   if (!research) return "";
   const sections = [
+    buildProvenanceLine(research),
     research.research_notes,
     research.company_context && `Company: ${research.company_context}`,
     research.hook && `Hook: ${research.hook}`,

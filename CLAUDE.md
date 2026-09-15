@@ -92,7 +92,7 @@ outreach-app/
 │   ├── lib/
 │   │   ├── profile.js            # PAT_PROFILE constant
 │   │   ├── api.js                # Frontend wrappers for /api/* endpoints
-│   │   ├── contact.js            # initContact() blank-contact factory + applyProfile() field merge (shared)
+│   │   ├── contact.js            # initContact() + applyProfile() merge + diffProfile() non-destructive split
 │   │   ├── contacts.js           # classifyTitle/classifyContact/mapLinkedInResult/mergeContacts + researchErrorMessage
 │   │   └── notion-schema.js      # Notion data source ID and field mappings
 │   ├── components/               # Cards 1-4 of the flow, plus the shared primitives
@@ -300,7 +300,7 @@ const patchLookup = (fields) => setLookup((l) => ({ ...l, ...fields }));
 const [contact, setContact] = useState(initContact());
 const [contactSource, setContactSource] = useState(null);
 const [contactAnchor, setContactAnchor] = useState(null);  // the person this record is about
-const [researchData, setResearchData] = useState(null);  // { research_notes, company_context, hook }
+const [researchData, setResearchData] = useState(null);  // notes/context/hook + as_of/confidence/sources + the unapplied `profile`
 const { fetching, fetchStatus, setFetchStatus, fetchLinkedIn } = useLinkedInFetch(setContact);
 
 // Card 4: composed output
@@ -339,7 +339,20 @@ matches. The Contact card's own LinkedIn field goes through `handleContactLinked
 on an anchor mismatch but deliberately does **not** set `contactSource`: that note means step 2
 handed over this person, and typing into step 3 is not step 2 doing work.
 
-**`runResearch(payload, resolvedLinkedin)` is the single research entry point.** Both the direct look-up in Find people and the `Research this person` button in the Contact card go through it, so `/api/research-person` is called exactly one way and its result is applied exactly one way (`applyProfile` onto the contact, notes/hook into `researchData`, `contactSource` to `"Research"`). It throws on failure and each caller renders the error where it belongs. There is no `researchKey`: research state is lifted, so `startContact` clears it directly rather than remounting a component.
+**`runResearch(payload, resolvedLinkedin)` is the single research entry point.** Both the direct look-up in Find people and the `Research this person` button in the Contact card go through it, so `/api/research-person` is called exactly one way and its result is applied exactly one way (`diffProfile` fills onto the contact, everything else into `researchData`, `contactSource` to `"Research"`).
+
+**Research fills blanks but never overwrites.** It is a web search, and the page it lands on is
+frequently an outdated profile or an old press mention, so a contact that arrived correct from
+Hunter.io must not be silently downgraded by it. `diffProfile` (in `lib/contact.js`) splits the
+returned profile into `fills` (fields the contact has no value for, written directly) and
+`conflicts` (fields research disagrees with, left alone). The unapplied profile is kept on
+`researchData.profile`, and `ContactPanel` re-diffs it against the live contact on **every render**
+rather than snapshotting it, so hand-editing `company` after a research run re-raises the mismatch
+instead of leaving research notes about a different company silently attached. `acceptSuggestion(field, value)`
+is the one way a conflict gets written, per field.
+
+`applyProfile` is untouched and still used by `useLinkedInFetch`: that is a direct extraction from
+the profile URL the record is already anchored to, not a search that may have found the wrong page. It throws on failure and each caller renders the error where it belongs. There is no `researchKey`: research state is lifted, so `startContact` clears it directly rather than remounting a component.
 
 ### Card 1: Analyze a posting (`PostingAnalyzer.jsx`)
 
@@ -404,7 +417,19 @@ The one place a person is edited **and researched**. Everything known about a co
 
 Buttons: `Research this person` (blue), `Push to Notion` (green). **There is no Reset button.** Every path that loads a person clears the record itself (see `startContact`), and analyzing a new posting clears the whole hunt, so a Reset button was a control that mostly did nothing while sitting where it looked like it did something important. The one deliberate cost: a hand-typed contact can only be emptied by starting over from the posting.
 
-`Research this person` derives its payload from the contact rather than from its own inputs: a `linkedin` URL wins when there is one, otherwise `name` + `company`. It calls `Dashboard`'s shared `runResearch`, and keeps only its own `researching` / `researchError` state, since nothing outside this card reacts to them.
+`Research this person` derives its payload from the contact rather than from its own inputs: a `linkedin` URL wins when there is one, otherwise `name` + `company`. It calls `Dashboard`'s shared `runResearch`, and keeps only its own `researching` / `researchError` / `dismissed` state, since nothing outside this card reacts to them.
+
+**Conflicting fields render a suggestion, never a silent write.** Under each of the four profile
+inputs, an undismissed conflict renders a `.suggestion-row`: the value research claims, a `Use`
+button (`onAcceptSuggestion`), and a `Keep mine` button that adds the field to the local `dismissed`
+list. `dismissed` is cleared in the same `useEffect` on `personId` as `notionStatus` and
+`researchError`, for the same reason: it describes this person and must not outlive them.
+
+Above the research boxes, a `.research-provenance` row answers how much to trust what follows: a
+confidence badge (`high` green "Confirmed recent", `moderate` amber "May be outdated", `low` red
+"Unverified") and the `as_of` date. The maps are local to this component and the render guards on the
+label map having an entry, the same pattern as `PostingAnalyzer`'s badge maps. `sources` renders as a
+short list of links below the hook, so a doubtful title is one click to check.
 
 Research output renders as `Field` label + `.summary-box` for the notes, and label + `.summary-box.summary-box-accent` for the hook. **One box per idea, never a box inside a box** -- the old Research card wrapped a `.summary-box` inside a `.fit-group`, which rendered as visible double nesting. The hook gets an accent border instead of its own container.
 
@@ -414,7 +439,7 @@ Research lives here rather than in Find people because notes about a person belo
 
 Clearing is `Dashboard`'s job entirely. This card only clears its own local `notionStatus` and `researchError`, which it does whenever `personId` (the anchor) changes, so a "pushed to Notion" banner cannot outlive the person it referred to.
 
-`Push to Notion` sends `{ ...contact, notes: buildResearchNotes(research) }`. The research is composed into Notion's `Notes` property at push time rather than being an editable field, so nothing new appears in an already dense card and there is no fourth copy of the same text to keep in sync. `buildResearchNotes` lives in `src/lib/contact.js` and returns `""` when nothing was researched, which is the serverless function's signal to omit the property.
+`Push to Notion` sends `{ ...contact, notes: buildResearchNotes(research) }`. The research is composed into Notion's `Notes` property at push time rather than being an editable field, so nothing new appears in an already dense card and there is no fourth copy of the same text to keep in sync. `buildResearchNotes` lives in `src/lib/contact.js` and returns `""` when nothing was researched, which is the serverless function's signal to omit the property. It leads with `buildProvenanceLine(research)` (the as-of date, the confidence, and "not verified, so check the title before sending") for the same reason the screen does: a note read six weeks from now should say up front that its claims were never confirmed.
 
 ### Card 4: Compose (`ComposeCard.jsx`)
 
@@ -441,6 +466,12 @@ A single muted helper line below the buttons changes with context:
 | neither | "Add a contact or analyze a posting to compose." |
 
 **Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research)` carries contact fields, the analysis summary and strengths (labeled by `posting_type`), the research notes, company context, and hook, and a suggested reference template.
+
+**The research block is labeled, not stated.** It is introduced with its as-of date, its confidence,
+and an explicit instruction that the contact fields above are authoritative and no role, company, or
+launch from the research may be asserted as current fact. Without that, a stale title reached
+Claude.ai as plain assertion and came back asserted in the message Pat sends. All three research
+fields sit inside that one labeled block so the caveat covers them together.
 
 **Generate pitch** calls `api.generatePitch(posting, context)` where `context` is the analysis **only when `analysis.posting_type === "freelance"`**. A full-time fit analysis would feed job-hunting language into a client proposal. Only `strengths` and `gaps` are forwarded server-side; `red_flags` and `fit_score` are deliberately withheld (red flags are a walk-away signal with no place in a pitch, and a score only makes the model hedge).
 
@@ -619,7 +650,7 @@ Document this in the README.
 
 **Request:** `{ url?: string, name?: string, company?: string }` (at least one of `url` or `name` required)
 
-**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, company_context, hook }`, where `research_notes` is 2-3 sentences on the person, `company_context` is 1-2 sentences on what the company does, its stage or size, and what it is shipping, and `hook` is one specific real observation to open with. `company_context` exists because the outreach prompt and the Notion note both want a line about the business, not only the person, and asking for it as its own field keeps it out of `research_notes`, which is about the human. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
+**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, company_context, hook, as_of, confidence, sources }`, where `research_notes` is 2-3 sentences on the person, `company_context` is 1-2 sentences on what the company does, its stage or size, and what it is shipping, and `hook` is one specific real observation to open with. `company_context` exists because the outreach prompt and the Notion note both want a line about the business, not only the person, and asking for it as its own field keeps it out of `research_notes`, which is about the human. `as_of` is the most recent date the model has real evidence for (`"YYYY-MM"` or `"Unknown"`, never guessed from today), `confidence` is `high|moderate|low`, and `sources` is up to 3 URLs actually used. Those three exist because the UI, the outreach prompt, and the Notion note all need to say how old a claim is; without them a two-year-old title reads as current fact in a message that gets sent. `confidence` is validated against the three known values server-side for the same reason `forceType` is: it drives a badge variant, and an unexpected string would render an empty pill. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
 
 ### `/api/generate-pitch` (POST)
 

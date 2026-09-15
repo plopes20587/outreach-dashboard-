@@ -46,14 +46,21 @@ function buildOutreachPrompt(contact, analysis, research) {
     }
   }
 
-  if (research?.research_notes) {
-    lines.push("", `Research on this person: ${research.research_notes}`);
-  }
-  if (research?.company_context) {
-    lines.push(`About the company: ${research.company_context}`);
-  }
-  if (research?.hook) {
-    lines.push(`Specific hook to open with: ${research.hook}`);
+  // The research block is labeled rather than stated. It comes from a web search
+  // that often reads an outdated profile, and an unqualified "Head of Design at
+  // Acme" here is asserted as current fact in the message that gets sent. The
+  // contact fields above are the ones Pat controls and has corrected, so they
+  // stay authoritative and the research is explicitly subordinate to them.
+  if (research?.research_notes || research?.company_context || research?.hook) {
+    const dated = research.as_of && research.as_of !== "Unknown";
+    lines.push(
+      "",
+      `Research below is from a web search${dated ? ` as of ${research.as_of}` : " with no date found"}, confidence ${research.confidence || "moderate"}, and is not verified.`,
+      "The contact details above are authoritative. Do not state any role, company, or launch from the research as current fact; reference it only as something I noticed, and hedge if it matters.",
+    );
+    if (research.research_notes) lines.push(`Research on this person: ${research.research_notes}`);
+    if (research.company_context) lines.push(`About the company: ${research.company_context}`);
+    if (research.hook) lines.push(`Possible hook to open with: ${research.hook}`);
   }
 
   lines.push(

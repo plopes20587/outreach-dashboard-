@@ -739,3 +739,52 @@ a:hover {
   line-height: 1.6;
   color: var(--text-2);
 }
+
+/* Research suggests a different value for a field that already has one. It sits
+   under the input rather than replacing the value, because research is a web
+   search and the page it read is often older than what Hunter.io already gave
+   us. The quoted value is muted so it reads as reference; only the marker is
+   amber, since a difference is a question, not an error. */
+.suggestion-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.suggestion-text {
+  color: var(--text-2);
+}
+
+.suggestion-text::before {
+  content: "\26A0";
+  color: var(--amber);
+  margin-right: var(--space-1);
+}
+
+/* How fresh the research is, above the notes it qualifies. */
+.research-provenance {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.source-list a {
+  color: var(--text-2);
+}
+
+.source-list a:hover {
+  color: var(--text);
+}
