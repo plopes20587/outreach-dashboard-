@@ -18,58 +18,78 @@ function suggestTemplate(contact) {
 // Builds the structured prompt Pat copies into his Claude.ai project, where the
 // outreach-composer skill and reference templates actually write the message.
 // This app intentionally does NOT generate outreach itself (CLAUDE.md Hard Rule
-// #9). `analysis` is the posting context when one was analyzed; `research` is
-// the notes, company context, and hook when a person was researched. Both are
-// optional.
-function buildOutreachPrompt(contact, analysis, research) {
-  const lines = [];
-
-  let opener = `Draft an outreach message for ${contact.name || "this contact"}`;
+// #9). `analysis` and `postingText` are the analyzed posting and the exact text
+// it ran on; `research` is the notes, company context, and hook when a person
+// was researched. All three are optional.
+//
+// Each section is built separately and dropped when it has nothing in it, so a
+// contact with no posting and no research still reads as a clean prompt.
+function buildOutreachPrompt(contact, analysis, research, postingText) {
+  let opener = `Draft one outreach message to ${contact.name || "this contact"}`;
   if (contact.title)   opener += `, ${contact.title}`;
   if (contact.company) opener += ` at ${contact.company}`;
   opener += ".";
-  lines.push(opener);
 
-  if (contact.contactType) lines.push(`Contact type: ${contact.contactType}.`);
-  if (contact.leadType)    lines.push(`Lead type: ${contact.leadType}.`);
-  if (contact.location)    lines.push(`Location: ${contact.location}.`);
-  if (contact.linkedin)    lines.push(`LinkedIn: ${contact.linkedin}.`);
+  // An email needs a subject line and a LinkedIn note has to be short, so the
+  // channel is stated rather than left for Claude.ai to guess.
+  const contactSection = [
+    "## Contact (authoritative, I have checked these)",
+    contact.contactType && `- Contact type: ${contact.contactType}`,
+    contact.leadType    && `- Lead type: ${contact.leadType}`,
+    contact.location    && `- Location: ${contact.location}`,
+    contact.linkedin    && `- LinkedIn: ${contact.linkedin}`,
+    contact.email
+      ? "- Channel: email, so include a subject line"
+      : "- Channel: LinkedIn message, so keep it short",
+  ];
 
-  if (analysis?.summary) {
-    const label =
-      analysis.posting_type === "freelance"
-        ? "Contract context (from the posting)"
-        : "Fit context (from the job description)";
-    lines.push("", `${label}: ${analysis.summary}`);
-    if (analysis.strengths?.length) {
-      lines.push(`Why it fits: ${analysis.strengths.join("; ")}.`);
-    }
-  }
+  // Only the strengths go in, framed as angles. The summary, gaps, red flags, and
+  // score are Pat's private verdict on whether to pursue, and handing that to the
+  // writer made messages generic and hedged. The posting text itself (below) is
+  // what gives the message something specific to say.
+  const reasonSection = analysis && [
+    "## Why I'm reaching out",
+    analysis.posting_type === "freelance"
+      ? `- The ${analysis.client ? `${analysis.client} ` : ""}${analysis.project_type || "freelance"} contract in the posting below`
+      : `- The ${analysis.company ? `${analysis.company} ` : ""}role in the posting below`,
+    analysis.strengths?.length && "- Angles to lead with:",
+    ...(analysis.strengths || []).map((strength) => `  - ${strength}`),
+  ];
 
-  // The research block is labeled rather than stated. It comes from a web search
-  // that often reads an outdated profile, and an unqualified "Head of Design at
-  // Acme" here is asserted as current fact in the message that gets sent. The
-  // contact fields above are the ones Pat controls and has corrected, so they
-  // stay authoritative and the research is explicitly subordinate to them.
-  if (research?.research_notes || research?.company_context || research?.hook) {
-    const dated = research.as_of && research.as_of !== "Unknown";
-    lines.push(
-      "",
-      `Research below is from a web search${dated ? ` as of ${research.as_of}` : " with no date found"}, confidence ${research.confidence || "moderate"}, and is not verified.`,
-      "The contact details above are authoritative. Do not state any role, company, or launch from the research as current fact; reference it only as something I noticed, and hedge if it matters.",
-    );
-    if (research.research_notes) lines.push(`Research on this person: ${research.research_notes}`);
-    if (research.company_context) lines.push(`About the company: ${research.company_context}`);
-    if (research.hook) lines.push(`Possible hook to open with: ${research.hook}`);
-  }
+  // Research comes from a web search that often lands on an outdated profile.
+  // Low confidence research is left out entirely: a claim too weak to assert
+  // cannot be asserted if it is never sent. Everything else is labeled with its
+  // date and confidence, and the writing rules below say to drop, not hedge,
+  // anything that may be stale.
+  const hasResearch = research?.research_notes || research?.company_context || research?.hook;
+  const researchSection = hasResearch && research.confidence !== "low" && [
+    `## Research (web search, ${research.as_of && research.as_of !== "Unknown" ? `as of ${research.as_of}` : "date unknown"}, confidence ${research.confidence || "moderate"}, not verified)`,
+    research.research_notes  && `- About them: ${research.research_notes}`,
+    research.company_context && `- About the company: ${research.company_context}`,
+    research.hook            && `- Possible hook: ${research.hook}`,
+  ];
 
-  lines.push(
-    "",
-    `Suggested template: ${suggestTemplate(contact)}.`,
-    "Use my outreach-composer skill and the suggested reference template to write the message.",
-  );
+  // The posting sits just before the instructions: Claude handles a long document
+  // best when the instructions come after it.
+  const postingSection = analysis && postingText?.trim() && [
+    "## The posting",
+    "<posting>",
+    postingText.trim(),
+    "</posting>",
+  ];
 
-  return lines.join("\n");
+  const instructionSection = [
+    "## How to write it",
+    `- Use my outreach-composer skill and the ${suggestTemplate(contact)} reference template.`,
+    "- Be specific: open with one concrete detail from the posting or the hook, and name the overlap with one piece of my work. No generic praise.",
+    "- Source priority: the contact fields, then the posting, then the research. The posting is first-party and current; the research may be out of date.",
+    "- Never hedge. If you are not sure a detail is still current, leave it out rather than qualifying it.",
+  ];
+
+  return [[opener], contactSection, reasonSection, researchSection, postingSection, instructionSection]
+    .filter(Boolean)
+    .map((section) => section.filter(Boolean).join("\n"))
+    .join("\n\n");
 }
 
 // Step 4 of the flow. Both ways of producing something to send live here, so
@@ -80,7 +100,7 @@ function buildOutreachPrompt(contact, analysis, research) {
 // enough (a pitch for a posting you also have a contact at, outreach to someone
 // you found without a posting) that a wrong guess costs more than a soft hint.
 export default function ComposeCard({
-  contact, analysis, research, posting,
+  contact, analysis, research, posting, analyzedPosting,
   outreachPrompt, setOutreachPrompt,
   pitch, generating, pitchError, onGeneratePitch,
   step, done,
@@ -106,7 +126,7 @@ export default function ComposeCard({
       <div className="btn-row">
         <Button
           variant={outreachPrimary ? "purple" : "default"}
-          onClick={() => setOutreachPrompt(buildOutreachPrompt(contact, analysis, research))}
+          onClick={() => setOutreachPrompt(buildOutreachPrompt(contact, analysis, research, analyzedPosting))}
         >
           Draft outreach
         </Button>

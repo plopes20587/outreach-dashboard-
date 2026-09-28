@@ -464,13 +464,15 @@ A single muted helper line below the buttons changes with context:
 | posting only | "Writes a pitch you can paste straight into the posting." |
 | neither | "Add a contact or analyze a posting to compose." |
 
-**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research)` carries contact fields, the analysis summary and strengths (labeled by `posting_type`), the research notes, company context, and hook, and a suggested reference template.
+**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research, analyzedPosting)` is a set of markdown-headed sections, each dropped when empty: Contact (authoritative fields plus the channel: email with a subject line when `contact.email` is set, otherwise a short LinkedIn message), Why I'm reaching out (the role or contract, and `strengths` as angles to lead with), Research, The posting (the full `analyzedPosting` text in `<posting>` tags, placed just before the instructions), and How to write it (the suggested reference template, be specific, source priority, never hedge).
 
-**The research block is labeled, not stated.** It is introduced with its as-of date, its confidence,
-and an explicit instruction that the contact fields above are authoritative and no role, company, or
-launch from the research may be asserted as current fact. Without that, a stale title reached
-Claude.ai as plain assertion and came back asserted in the message Pat sends. All three research
-fields sit inside that one labeled block so the caveat covers them together.
+**The analysis verdict is not sent.** `summary`, `gaps`, `red_flags`, and `fit_score` are Pat's private judgment on whether to pursue; passing the summary made drafts generic and hedged. The posting text is what gives the message something specific to say, and `analyzedPosting` (not the live textarea) is used so the posting and the analysis always describe the same text.
+
+**The research block is labeled, and dropped rather than hedged.** It is introduced with its as-of
+date and confidence, the instructions rank it below the contact fields and the posting, and they tell
+Claude.ai to leave out any detail that may not be current instead of qualifying it (an earlier "hedge
+if it matters" instruction produced awkward hedges). At `low` confidence the whole block is omitted,
+since a claim too weak to assert cannot be asserted if it is never sent.
 
 **Generate pitch** calls `api.generatePitch(posting, context)` where `context` is the analysis **only when `analysis.posting_type === "freelance"`**. A full-time fit analysis would feed job-hunting language into a client proposal. Only `strengths` and `gaps` are forwarded server-side; `red_flags` and `fit_score` are deliberately withheld (red flags are a walk-away signal with no place in a pitch, and a score only makes the model hedge).
 
