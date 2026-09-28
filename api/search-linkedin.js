@@ -70,9 +70,11 @@ If no profiles found after searching, return: []`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        // Haiku is plenty for parsing LinkedIn URLs out of search results, at
-        // ~3x lower token cost than Sonnet. max_uses caps the paid web searches.
-        model: "claude-haiku-4-5",
+        // Parsing URLs out of search results, so thinking is off: it would add
+        // cost without better results, and the API rejects it with a forced tool
+        // call anyway. max_uses caps the paid web searches.
+        model: "claude-sonnet-5",
+        thinking: { type: "disabled" },
         max_tokens: 512,
         tool_choice: { type: "any" },
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],

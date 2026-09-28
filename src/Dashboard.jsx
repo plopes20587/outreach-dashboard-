@@ -368,6 +368,7 @@ export default function Dashboard() {
           analysis={analysis}
           research={researchData}
           posting={posting}
+          analyzedPosting={analyzedPosting}
           outreachPrompt={outreachPrompt}
           setOutreachPrompt={setOutreachPrompt}
           pitch={pitch}

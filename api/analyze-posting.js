@@ -218,8 +218,12 @@ ${schemaSection}`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1400,
+        // Adaptive thinking (Sonnet 5's default) helps rubric scoring. It counts
+        // against max_tokens, so the ceiling leaves room for it on top of the
+        // JSON; unused headroom is not billed. Medium effort limits spend.
+        model: "claude-sonnet-5",
+        max_tokens: 4000,
+        output_config: { effort: "medium" },
         messages: [{ role: "user", content: prompt }],
       }),
     });

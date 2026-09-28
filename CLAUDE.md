@@ -83,7 +83,7 @@ outreach-app/
 │   ├── search-linkedin.js        # POST {company, titles} → calls Anthropic with web_search for LinkedIn fallback
 │   ├── research-person.js        # POST {url}|{name,company} → calls Anthropic with web_search to research a founder/CEO (UC2)
 │   ├── push-notion.js            # POST {contact} → creates a page in the Notion tracker
-│   └── generate-pitch.js         # POST {posting, analysis?} → calls Groq to write a freelance pitch (Contra/Upwork/etc.)
+│   └── generate-pitch.js         # POST {posting, analysis?} → calls Anthropic (Sonnet 5) to write a freelance pitch (Contra/Upwork/etc.)
 ├── src/
 │   ├── App.jsx                   # Root wrapper; renders Dashboard (no tabs, no router)
 │   ├── Dashboard.jsx             # The single page: owns all shared state, renders the four cards in a two-column workspace
@@ -127,8 +127,7 @@ Document these in `.env.example`. Pat sets them in the Vercel dashboard, not in 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes | For the Anthropic API calls: posting analysis, LinkedIn fetch, LinkedIn search, person research |
-| `GROQ_API_KEY` | Yes | For Generate pitch in the Compose card (`generate-pitch`), which uses Groq's free tier |
+| `ANTHROPIC_API_KEY` | Yes | For every model call: posting analysis, LinkedIn fetch, LinkedIn search, person research, and Generate pitch |
 | `HUNTER_API_KEY` | Yes | For Hunter.io domain-search |
 | `NOTION_API_KEY` | Yes | Internal integration token for the Notion workspace |
 | `NOTION_DATABASE_ID` | Yes | The Contact Tracker database ID: `2f312b17-d357-8155-b06f-000b29a1c83f` |
@@ -400,8 +399,8 @@ Two sections, separated by a `.divider`:
 
 **B. Or add someone directly.** **Always rendered, never toggled** -- it is the reliable path when a company search misses, and the only path for the founder/CEO case (UC2) where there is no company worth searching. One input replaces what used to be two near-identical fields across the two cards, and it routes on the URL:
 
-- contains `linkedin.com/in/` -> `fetchLinkedIn(url)` (Haiku, cheap field extraction)
-- anything else (Product Hunt, Crunchbase, a company site) -> `runResearch({ url })` (Sonnet, the only endpoint that can actually read those pages)
+- contains `linkedin.com/in/` -> `fetchLinkedIn(url)` (cheap field extraction, thinking off)
+- anything else (Product Hunt, Crunchbase, a company site) -> `runResearch({ url })` (the only endpoint that can actually read those pages)
 
 A `.link-button` swaps to a `Name` + `Company` pair, which calls `runResearch({ name, company })`. That is the third of the three entry paths the two old cards had between them, preserved with one card, one mode toggle, and one Company input fewer.
 
@@ -465,13 +464,15 @@ A single muted helper line below the buttons changes with context:
 | posting only | "Writes a pitch you can paste straight into the posting." |
 | neither | "Add a contact or analyze a posting to compose." |
 
-**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research)` carries contact fields, the analysis summary and strengths (labeled by `posting_type`), the research notes, company context, and hook, and a suggested reference template.
+**Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research, analyzedPosting)` is a set of markdown-headed sections, each dropped when empty: Contact (authoritative fields plus the channel: email with a subject line when `contact.email` is set, otherwise a short LinkedIn message), Why I'm reaching out (the role or contract, and `strengths` as angles to lead with), Research, The posting (the full `analyzedPosting` text in `<posting>` tags, placed just before the instructions), and How to write it (the suggested reference template, be specific, source priority, never hedge).
 
-**The research block is labeled, not stated.** It is introduced with its as-of date, its confidence,
-and an explicit instruction that the contact fields above are authoritative and no role, company, or
-launch from the research may be asserted as current fact. Without that, a stale title reached
-Claude.ai as plain assertion and came back asserted in the message Pat sends. All three research
-fields sit inside that one labeled block so the caveat covers them together.
+**The analysis verdict is not sent.** `summary`, `gaps`, `red_flags`, and `fit_score` are Pat's private judgment on whether to pursue; passing the summary made drafts generic and hedged. The posting text is what gives the message something specific to say, and `analyzedPosting` (not the live textarea) is used so the posting and the analysis always describe the same text.
+
+**The research block is labeled, and dropped rather than hedged.** It is introduced with its as-of
+date and confidence, the instructions rank it below the contact fields and the posting, and they tell
+Claude.ai to leave out any detail that may not be current instead of qualifying it (an earlier "hedge
+if it matters" instruction produced awkward hedges). At `low` confidence the whole block is omitted,
+since a claim too weak to assert cannot be asserted if it is never sent.
 
 **Generate pitch** calls `api.generatePitch(posting, context)` where `context` is the analysis **only when `analysis.posting_type === "freelance"`**. A full-time fit analysis would feed job-hunting language into a client proposal. Only `strengths` and `gaps` are forwarded server-side; `red_flags` and `fit_score` are deliberately withheld (red flags are a walk-away signal with no place in a pitch, and a score only makes the model hedge).
 
@@ -506,7 +507,7 @@ if (request.method === "OPTIONS") {
 
 One endpoint for both job descriptions and freelance contracts. It replaced `analyze-jd` and `analyze-contract`, which were structurally identical (same Edge runtime, same CORS/`json()`/`stripFences()` helpers, same Anthropic call, same strengths/gaps/summary shape) and differed only in rubric. Keeping them apart meant two prompts to maintain and, in the UI, a decision the user had to make before pasting.
 
-**Behavior:** Edge runtime, Anthropic `claude-sonnet-4-6`, `max_tokens` 1400 (the union schema is larger than either original). Imports `PAT_PROFILE` from `./lib/profile.js`. `FREELANCE_CRITERIA` stays a module-level constant, separate from `PAT_PROFILE`, because those criteria apply only to contract work: the rate floor and hours ceiling are edited in that one place.
+**Behavior:** Edge runtime, Anthropic `claude-sonnet-5` with adaptive thinking at `effort: "medium"`, `max_tokens` 4000 (thinking counts against it, and the union schema is larger than either original). Imports `PAT_PROFILE` from `./lib/profile.js`. `FREELANCE_CRITERIA` stays a module-level constant, separate from `PAT_PROFILE`, because those criteria apply only to contract work: the rate floor and hours ceiling are edited in that one place.
 
 `forceType` is validated against the two known values and ignored otherwise, so an arbitrary string can never reach the prompt as an unvalidated instruction. When set, it both overrides detection and pins `posting_type` in the response.
 
@@ -578,7 +579,7 @@ Freelance:
 
 **Request:** `{ url: string }`
 
-**Behavior:** Call Anthropic with the web_search tool. Uses `claude-haiku-4-5` (this is pure field extraction, so Haiku is enough at ~3x lower token cost than Sonnet) with `max_tokens` 400 and web_search capped at `max_uses: 2` for cost efficiency. Use this prompt:
+**Behavior:** Call Anthropic with the web_search tool. Uses `claude-sonnet-5` with `thinking: { type: "disabled" }` (pure field extraction, and the API rejects thinking alongside the forced `tool_choice`) with `max_tokens` 400 and web_search capped at `max_uses: 2` for cost efficiency. Use this prompt:
 
 ```
 Look up this LinkedIn profile and extract the person's information: ${url}
@@ -597,7 +598,7 @@ Use the real name from their profile, not the URL slug. If not found, return: {"
 
 **Request:** `{ company: string, titles: string[] }`
 
-**Behavior:** Call Anthropic with web_search. Run `site:linkedin.com/in "${company}" "${title}"` queries for each title. Parse out real LinkedIn profile URLs from results. Return array of `{ name, linkedin, title, snippet, contact_type }`. Uses `claude-haiku-4-5` with `max_tokens` 512 and web_search capped at `max_uses: 2` for cost efficiency.
+**Behavior:** Call Anthropic with web_search. Run `site:linkedin.com/in "${company}" "${title}"` queries for each title. Parse out real LinkedIn profile URLs from results. Return array of `{ name, linkedin, title, snippet, contact_type }`. Uses `claude-sonnet-5` with thinking disabled (same reason as `fetch-linkedin`), `max_tokens` 512 and web_search capped at `max_uses: 2` for cost efficiency.
 
 This is the LinkedIn fallback when Hunter doesn't return useful results, and the frontend now calls it **only when Hunter returns fewer than 2 contacts** (cost efficiency). Note: this is unreliable since LinkedIn blocks Google indexing of profiles — keep the implementation as it is in the current artifact and accept that it may return empty.
 
@@ -650,7 +651,7 @@ Document this in the README.
 
 **Request:** `{ url?: string, name?: string, company?: string }` (at least one of `url` or `name` required)
 
-**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, but kept on `claude-sonnet-4-6` because writing research notes and a hook needs reasoning; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, company_context, hook, as_of, confidence, sources }`, where `research_notes` is 2-3 sentences on the person, `company_context` is 1-2 sentences on what the company does, its stage or size, and what it is shipping, and `hook` is one specific real observation to open with. `company_context` exists because the outreach prompt and the Notion note both want a line about the business, not only the person, and asking for it as its own field keeps it out of `research_notes`, which is about the human. `as_of` is the most recent date the model has real evidence for (`"YYYY-MM"` or `"Unknown"`, never guessed from today), `confidence` is `high|moderate|low`, and `sources` is up to 3 URLs actually used. Those three exist because the UI, the outreach prompt, and the Notion note all need to say how old a claim is; without them a two-year-old title reads as current fact in a message that gets sent. `confidence` is validated against the three known values server-side for the same reason `forceType` is: it drives a badge variant, and an unexpected string would render an empty pill. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
+**Behavior:** Call Anthropic with the web_search tool (mirror `fetch-linkedin.js`, on `claude-sonnet-5` with thinking disabled, because the API rejects thinking alongside the forced `tool_choice` and forcing the search is what keeps research from answering out of stale memory; web_search capped at `max_uses: 3`) to research a founder/CEO for freelance outreach (UC2). Return JSON: `{ name, first_name, last_name, title, company, location, research_notes, company_context, hook, as_of, confidence, sources }`, where `research_notes` is 2-3 sentences on the person, `company_context` is 1-2 sentences on what the company does, its stage or size, and what it is shipping, and `hook` is one specific real observation to open with. `company_context` exists because the outreach prompt and the Notion note both want a line about the business, not only the person, and asking for it as its own field keeps it out of `research_notes`, which is about the human. `as_of` is the most recent date the model has real evidence for (`"YYYY-MM"` or `"Unknown"`, never guessed from today), `confidence` is `high|moderate|low`, and `sources` is up to 3 URLs actually used. Those three exist because the UI, the outreach prompt, and the Notion note all need to say how old a claim is; without them a two-year-old title reads as current fact in a message that gets sent. `confidence` is validated against the three known values server-side for the same reason `forceType` is: it drives a badge variant, and an unexpected string would render an empty pill. Name formatted as `First Last`. This is research/enrichment only -- it does not write outreach (Hard Rule #9 preserved).
 
 ### `/api/generate-pitch` (POST)
 
@@ -658,7 +659,7 @@ Document this in the README.
 
 `analysis` is the optional **freelance** result of `/api/analyze-posting` (the frontend forwards it only when `posting_type === "freelance"`, so a full-time fit analysis never reaches a client proposal). When present, only its `strengths` and `gaps` are appended to the **user message** (never the system prompt, so the tone rules are untouched). `red_flags` and `fit_score` are deliberately NOT passed through: red flags are Pat's walk-away signal and have no place in a pitch, and a score only makes the model hedge its tone. With no `analysis`, behavior is identical to before.
 
-**Behavior:** Call Groq (`llama-3.3-70b-versatile`, free tier, OpenAI-compatible `chat/completions` endpoint) with a system prompt that combines `PAT_PROFILE` (imported from `lib/profile.js`) with the Contra-specific tone rules below. Groq is used here instead of Anthropic as a cost decision (see Hard Rule #7 exception); the request uses `response_format: { type: "json_object" }` to guarantee a `{ message, notes }` JSON object. The system prompt should follow this template:
+**Behavior:** Call Anthropic (`claude-sonnet-5`) with a top-level `system` prompt that combines `PAT_PROFILE` (imported from `lib/profile.js`) with the Contra-specific tone rules below. The request uses structured outputs (`output_config.format` with a JSON schema requiring `message` and `notes` strings) to guarantee a `{ message, notes }` JSON object. The system prompt should follow this template:
 
 ```js
 const systemPrompt = `${PAT_PROFILE}
@@ -700,7 +701,7 @@ Return as JSON only, no markdown:
 }
 ```
 
-Use Groq `llama-3.3-70b-versatile` with `max_tokens` 1200.
+Use `claude-sonnet-5` with adaptive thinking at `effort: "medium"` and `max_tokens` 4000 (thinking counts against it; unused headroom is not billed).
 
 ---
 
@@ -928,11 +929,14 @@ These are NOT suggestions. The agent must follow them strictly.
 
    | Endpoint | Model | Why |
    |----------|-------|-----|
-   | `analyze-posting`, `research-person` | `claude-sonnet-4-6` | Judgment and writing: scoring against a rubric, writing research notes and a hook. |
-   | `fetch-linkedin`, `search-linkedin` | `claude-haiku-4-5` | Pure field extraction from web search. Roughly 3x cheaper per token, no quality loss on this task. |
-   | `generate-pitch` | Groq `llama-3.3-70b-versatile` | Cost decision, see below. |
+   Every endpoint uses `claude-sonnet-5` (Pat's choice, Sept 2026). What varies is thinking, which Sonnet 5 turns on by default and which counts against `max_tokens`:
 
-   **Exception:** `generate-pitch` intentionally uses Groq's free tier (`llama-3.3-70b-versatile`, OpenAI-compatible API) instead of Anthropic. This is a deliberate cost decision, not a model substitution within an Anthropic call. It is safe because the pitch is self-contained (no web search, no Claude.ai skills/connectors) so the swap does not affect any other flow.
+   | Endpoint | Thinking | Why |
+   |----------|----------|-----|
+   | `analyze-posting`, `generate-pitch` | Adaptive, `effort: "medium"`, `max_tokens` 4000 | Judgment and writing benefit from it; medium effort limits spend. |
+   | `research-person`, `fetch-linkedin`, `search-linkedin` | `{ type: "disabled" }` | These force a web search with `tool_choice: { type: "any" }`, which the API rejects when thinking is on. The forced search matters more: it keeps answers from coming out of stale memory. The two LinkedIn calls are also pure extraction, where thinking only adds cost. |
+
+   Sonnet 5 rejects `temperature` and assistant prefill, so no endpoint may send either.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Notes`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **Generate pitch (in the Compose card) IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill. Draft outreach, sitting right next to it in the same card, is still a pure clipboard copy.

@@ -2,10 +2,21 @@ export const config = { runtime: "edge" };
 
 import { PAT_PROFILE } from "./lib/profile.js";
 
-// This function intentionally uses Groq's free tier (OpenAI-compatible API)
-// instead of Anthropic (cost decision -- see CLAUDE.md Hard Rule #7 carve-out).
-// The pitch is pure text generation with no web search, so it ports cleanly.
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Sonnet 5 across every endpoint (CLAUDE.md Hard Rule #7). The pitch is pure
+// writing with no web search, so it keeps adaptive thinking at medium effort.
+const MODEL = "claude-sonnet-5";
+
+// Structured outputs: the API guarantees the reply matches this shape, so a
+// pitch can never come back missing its message or notes.
+const PITCH_SCHEMA = {
+  type: "object",
+  properties: {
+    message: { type: "string" },
+    notes: { type: "string" },
+  },
+  required: ["message", "notes"],
+  additionalProperties: false,
+};
 
 const CORS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
@@ -50,8 +61,8 @@ export default async function handler(request) {
     return new Response(null, { status: 204, headers: CORS });
   }
 
-  if (!process.env.GROQ_API_KEY) {
-    return json({ error: "GROQ_API_KEY is not configured" }, 500);
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return json({ error: "ANTHROPIC_API_KEY is not configured" }, 500);
   }
 
   let body;
@@ -88,50 +99,52 @@ ${posting}
 ${analysisBlock}
 Write the pitch following all tone and structure rules. Then add a PERSONALIZATION NOTES section.
 
-Return as JSON only, no markdown:
+Return as JSON:
 {
   "message": "<the full application message, plain text, newlines as \\n>",
   "notes": "<personalization notes, 2-3 key choices explained, plain text>"
 }`;
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
-        max_tokens: 1200,
-        // JSON mode: forces a JSON object back. The user message already asks for JSON,
-        // which OpenAI-compatible JSON mode requires.
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage },
-        ],
+        model: MODEL,
+        // Adaptive thinking counts against max_tokens, so leave room for it
+        // on top of a ~250 word message. Unused headroom is not billed.
+        max_tokens: 4000,
+        output_config: {
+          effort: "medium",
+          format: { type: "json_schema", schema: PITCH_SCHEMA },
+        },
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
       }),
     });
 
     if (!res.ok) {
       const detail = await res.text();
-      console.error("Groq error:", detail);
-      return json({ error: "Groq API error", detail: res.status }, 502);
+      console.error("Anthropic error:", detail);
+      return json({ error: "Anthropic API error", detail: res.status }, 502);
     }
 
     const data = await res.json();
-    const textBlock = data.choices?.[0]?.message?.content;
-    // stripFences is defensive only -- JSON mode should already give us clean JSON.
-    const parsed = JSON.parse(stripFences(textBlock || "{}"));
+    const textBlock = data.content?.find((b) => b.type === "text");
+    // stripFences is defensive only -- structured outputs already give clean JSON.
+    const parsed = JSON.parse(stripFences(textBlock?.text || "{}"));
 
     if (!parsed.message || !parsed.notes) {
       return json({ error: "Unexpected response format from model" }, 502);
     }
 
-    // Pat's hard rule: never use em dashes. Open models honor this less reliably
-    // than Claude did, so strip any that slip through before returning.
-    const noEmDash = (s) => s.replace(/\s*—\s*/g, ", ");
+    // Pat's hard rule: never use em dashes. The prompt says so, but strip any
+    // that slip through anyway, since one in a sent message is costly.
+    const noEmDash = (s) => s.replace(/\s*\u2014\s*/g, ", ");
     return json({ message: noEmDash(parsed.message), notes: noEmDash(parsed.notes) });
   } catch (err) {
     console.error("generate-pitch:", err.message);
