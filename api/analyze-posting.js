@@ -138,7 +138,12 @@ Good: "Strategic scope is real: the role asks Pat to set team standards and part
 Too long: the same point padded with a second clause about mentoring and a third about his current role.
 Put depth, caveats, and reasoning in the summary, which has no length cap.`;
 
-const FULLTIME_SCHEMA = `{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4 specific, evidence-based>"],"gaps":["<2-4 specific>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}`;
+const FULLTIME_SCHEMA = `{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","email_domain":"<domain staff work email uses, or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4 specific, evidence-based>"],"gaps":["<2-4 specific>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}`;
+
+// The contact search runs on this domain, so a wrong one silently returns
+// nothing. Guessing "<company>.com" missed every .io company and every product
+// whose staff use a parent company's email (MetaMask staff are @consensys.io).
+const EMAIL_DOMAIN_RULE = `email_domain is the domain the company's employees use for work email, used to look up contacts. It is often not the product's website: when the company is a product or subsidiary of a parent whose email staff use, give the parent's domain (MetaMask -> consensys.io). Use .io, .co, or whatever the real domain is; never assume .com. Return an empty string if you are not confident, since a wrong domain is worse than none.`;
 
 const FREELANCE_SCHEMA = `{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","tier":"Design audit|Landing page or marketing site|Product or web app UI/UX|Retainer|unclear","industry":"<industry, reported only>","rate":"<max 30 chars, or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars, or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}`;
 
@@ -176,6 +181,7 @@ export default async function handler(request) {
   // The freelance criteria and badge rules are dead weight on a full-time-only
   // analysis, so they are omitted there rather than left to be ignored.
   const wantsFreelance = override !== "full-time";
+  const wantsFullTime = override !== "freelance";
 
   const typeSection = override
     ? `POSTING TYPE (already decided)
@@ -206,7 +212,7 @@ ${rubricSection}
 Never use em dashes in any field of your response.
 
 ${BULLET_RULES}
-${wantsFreelance ? `\n${BADGE_RULES}\n` : ""}
+${wantsFreelance ? `\n${BADGE_RULES}\n` : ""}${wantsFullTime ? `\n${EMAIL_DOMAIN_RULE}\n` : ""}
 ${schemaSection}`;
 
   try {
@@ -243,6 +249,20 @@ ${schemaSection}`;
     // otherwise to full-time, rather than returning something unrenderable.
     if (parsed.posting_type !== "full-time" && parsed.posting_type !== "freelance") {
       parsed.posting_type = override || "full-time";
+    }
+
+    // email_domain prefills the contact search, so normalize it here: models
+    // sometimes return "https://x.io" or "@x.io", and anything that still does
+    // not look like a domain is dropped rather than searched.
+    if (typeof parsed.email_domain === "string") {
+      const cleanDomain = parsed.email_domain
+        .trim()
+        .toLowerCase()
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "")
+        .replace(/^.*@/, "")
+        .replace(/\/.*$/, "");
+      parsed.email_domain = /^[a-z0-9.-]+\.[a-z]{2,}$/.test(cleanDomain) ? cleanDomain : "";
     }
 
     return json(parsed);

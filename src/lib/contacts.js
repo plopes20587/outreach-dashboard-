@@ -10,7 +10,7 @@
 export function classifyTitle(title = "") {
   const designLeader =
     /(design|ux|user\s*experience)/i.test(title) &&
-    /(head|director|vp|chief|lead|principal|staff|manager)/i.test(title);
+    /(head|director|vp|vice\s*president|chief|lead|principal|staff|manager)/i.test(title);
 
   const creativeLeader =
     /(creative\s*director|head\s*of\s*creative|chief\s*creative)/i.test(title);
@@ -24,7 +24,7 @@ export function classifyTitle(title = "") {
     !/(sales|finance|legal|operations|account|customer\s*success)\s*recruit/i.test(title);
 
   const informational =
-    /(product\s*manager|product\s*lead|head\s*of\s*product|director\s*of\s*product|vp\s*of\s*product|chief\s*product)/i.test(title) ||
+    /(product\s*manager|product\s*lead|head\s*of\s*product|director\s*of\s*product|(vp|vice\s*president)\s*(of\s*)?product|chief\s*product)/i.test(title) ||
     /(design\s*ops|designops|design\s*operations)/i.test(title) ||
     /(ux\s*research|user\s*research|ux\s*researcher|user\s*researcher|design\s*research)/i.test(title) ||
     /(service\s*designer|content\s*designer|content\s*strategist|ux\s*writer)/i.test(title) ||

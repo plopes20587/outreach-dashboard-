@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState({
     company: "", domain: "", searching: false,
     results: [], done: false, error: null, selIdx: null,
+    hunterTotal: null,  // emails Hunter has at the searched domain, for the empty state
   });
   const [lookup, setLookup] = useState({
     mode: "url", url: "", name: "", company: "",
@@ -96,10 +97,13 @@ export default function Dashboard() {
       if (org) {
         patchSearch({
           company: org,
-          // A client name rarely maps to a searchable domain, so only a job
-          // posting gets a guessed one.
+          // Only a job posting gets a domain, and only the one the analyzer
+          // named. It used to be guessed as "<company>.com", which missed .io
+          // companies and products whose staff use a parent company's email
+          // (MetaMask is @consensys.io). Blank is fine: the search then lets
+          // Hunter resolve the domain from the company name.
           ...(data.posting_type !== "freelance" && {
-            domain: org.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com",
+            domain: data.email_domain || "",
           }),
         });
       }
@@ -145,7 +149,7 @@ export default function Dashboard() {
     startContact();
     patchSearch({
       company: "", domain: "",
-      results: [], done: false, selIdx: null, error: null,
+      results: [], done: false, selIdx: null, error: null, hunterTotal: null,
     });
     patchLookup({ url: "", name: "", company: "", status: null, error: null });
     setPitch(null);

@@ -25,7 +25,7 @@ export default function FindPeople({
 }) {
   const [linkedinLoading, setLinkedinLoading] = useState(false);
 
-  const { company, domain, searching, results, done: searchDone, error: searchError, selIdx } = search;
+  const { company, domain, searching, results, done: searchDone, error: searchError, selIdx, hunterTotal } = search;
   const isUrlMode = lookup.mode === "url";
 
   // Hunter (fast, has emails) runs first and its results render immediately.
@@ -39,7 +39,7 @@ export default function FindPeople({
 
     // Clear stale look-up feedback so the only status on screen belongs to the
     // action that is running now.
-    patchSearch({ searching: true, error: null, done: false, selIdx: null, results: [] });
+    patchSearch({ searching: true, error: null, done: false, selIdx: null, results: [], hunterTotal: null });
     patchLookup({ status: null, error: null });
 
     const sortByScore = (list) => [...list].sort((a, b) => b.score - a.score);
@@ -53,7 +53,8 @@ export default function FindPeople({
             .map((p) => classifyContact(p, searchTitles || []))
             .filter(Boolean),
         );
-        patchSearch({ results: merged, done: true });
+        // Kept so an empty result can say whether the domain itself looks wrong.
+        patchSearch({ results: merged, done: true, hunterTotal: data.meta?.results ?? null });
       } catch (err) {
         patchSearch({ error: err.message || "Hunter search failed." });
       }
@@ -140,7 +141,10 @@ export default function FindPeople({
           makes has been fulfilled by then. */}
       {searchDone && !searching && results.length === 0 && fetchStatus !== "ok" && (
         <div className="notice notice-info">
-          No design or recruiting contacts found for {company || domain}. Add someone by URL below.
+          No design or recruiting contacts found at {domain || company}
+          {hunterTotal != null && ` (Hunter has ${hunterTotal} email${hunterTotal === 1 ? "" : "s"} there)`}.
+          {" "}If staff use a different email domain (a parent company, or .io instead
+          of .com), edit Company domain and search again, or add someone by URL below.
         </div>
       )}
 

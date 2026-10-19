@@ -387,7 +387,7 @@ const TERM_LABEL = { strong: "Good", moderate: "Acceptable", mismatch: "Below ta
 
 Never use the industry labels on a freelance result: "Primary/Secondary/Mismatch" is industry language and says nothing about a rate.
 
-On success, `Dashboard` pre-fills the Find people search fields: a job posting's `company` fills both `search.company` and a guessed `search.domain` (lowercased company + ".com"); a contract's `client` fills `company` only, since a client name rarely maps to a searchable domain. That prefill is also what sets Find people's `From <org>` provenance note.
+On success, `Dashboard` pre-fills the Find people search fields: a job posting's `company` fills `search.company` and its `email_domain` fills `search.domain`; a contract's `client` fills `company` only, since a client name rarely maps to a searchable domain. The domain used to be guessed as lowercased company + ".com", which searched the wrong place for every `.io` company and every product whose staff use a parent company's email (MetaMask staff are `@consensys.io`: Hunter had 4 emails at metamask.com and 189 at consensys.io). Do not reintroduce a guess. That prefill is also what sets Find people's `From <org>` provenance note.
 
 ### Card 2: Find people (`FindPeople.jsx`)
 
@@ -549,7 +549,7 @@ The prompt also caps `rate` and `hours` at 30 characters and gives compressed ex
 
 Full-time:
 ```json
-{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4>"],"gaps":["<2-4>"],"summary":"<4-5 sentences>","search_titles":["<t1>","<t2>","<t3>"]}
+{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","email_domain":"<domain staff work email uses, or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4>"],"gaps":["<2-4>"],"summary":"<4-5 sentences>","search_titles":["<t1>","<t2>","<t3>"]}
 ```
 
 Freelance:
@@ -558,6 +558,8 @@ Freelance:
 ```
 
 `red_flags` stays separate from `gaps`: a gap is something to address in the pitch, a red flag is a reason to walk away.
+
+`email_domain` (full-time only, governed by `EMAIL_DOMAIN_RULE`) is the domain employees use for work email, which is often not the product's website: a product or subsidiary gets its parent's domain when staff use it. The model is told to return empty rather than guess, since a wrong domain silently returns nothing. The handler normalizes it (strips protocol, `www.`, anything before `@`, any path) and blanks anything that still does not look like a domain.
 
 `tier` renders as a neutral badge in the freelance badge row, never a colored one. It answers "what do I quote for this?", which is a different question from "is this a good contract?", and coloring it would read as a fit judgment. It is hidden when `unclear`.
 
@@ -571,7 +573,13 @@ Freelance:
 
 > The limit is 10 because Pat's Hunter.io plan caps a domain-search at 10 results. Requesting more returns a `pagination_error` 400 from Hunter, which surfaces to the UI as a 502. Do not raise this without checking the plan first.
 
-**Behavior:** Sanitize domain, hit `https://api.hunter.io/v2/domain-search?domain=...&limit=...&api_key=${HUNTER_API_KEY}`, return Hunter's response as-is.
+**Behavior:** Sanitize domain, hit `https://api.hunter.io/v2/domain-search` with `type=personal` (role inboxes like `info@` have no name and are dropped anyway), and return Hunter's response as-is. The server clamps `limit` to 10.
+
+**Department tiers.** Unfiltered, the 10 slots fill with engineers and sales at any large company and the frontend drops them all (consensys.io: 2 of 10 kept unfiltered, 7 of 10 on `design,hr`). So `DEPARTMENT_TIERS` widens in steps: `design,hr`, then `management,executive`, then unfiltered, because Hunter leaves many people untagged. It stops at the first tier with 2+ named people and returns whichever tier had the most. Hunter does not charge for an empty search, so the extra tiers cost little on a dead domain. A later tier failing never discards what an earlier tier found.
+
+**Domain only, never company name.** Hunter's `company=` parameter resolves a domain from a name, but it resolved "MetaMask" to `metamask.co.in`, a different company. Contacts from the wrong company are worse than none, so the search requires a domain and the analyzer supplies it.
+
+The response's `meta.results` is shown in the Find people empty state ("Hunter has N emails there"), so a wrong domain reads as a domain problem rather than as "this company has no designers."
 
 **Important:** Do NOT score/filter contacts on the server. Return raw Hunter results — let the frontend handle the scoring logic. Keeps the API thin and lets the frontend tweak ranking without redeploys.
 
@@ -760,7 +768,7 @@ These helpers live in `src/lib/contacts.js` and are imported by `FindPeople.jsx`
 function classifyTitle(title = "") {
   const designLeader =
     /(design|ux|user\s*experience)/i.test(title) &&
-    /(head|director|vp|chief|lead|principal|staff|manager)/i.test(title);
+    /(head|director|vp|vice\s*president|chief|lead|principal|staff|manager)/i.test(title);
 
   const creativeLeader =
     /(creative\s*director|head\s*of\s*creative|chief\s*creative)/i.test(title);
@@ -774,7 +782,7 @@ function classifyTitle(title = "") {
     !/(sales|finance|legal|operations|account|customer\s*success)\s*recruit/i.test(title);
 
   const informational =
-    /(product\s*manager|product\s*lead|head\s*of\s*product|director\s*of\s*product|vp\s*of\s*product|chief\s*product)/i.test(title) ||
+    /(product\s*manager|product\s*lead|head\s*of\s*product|director\s*of\s*product|(vp|vice\s*president)\s*(of\s*)?product|chief\s*product)/i.test(title) ||
     /(design\s*ops|designops|design\s*operations)/i.test(title) ||
     /(ux\s*research|user\s*research|ux\s*researcher|user\s*researcher|design\s*research)/i.test(title) ||
     /(service\s*designer|content\s*designer|content\s*strategist|ux\s*writer)/i.test(title) ||
@@ -850,6 +858,8 @@ LinkedIn results from `/api/search-linkedin` are normalized through the same `cl
 | "Design Operations Manager" | Hiring Manager, score 100 |
 | "Content Designer" | Referral, score 80 |
 | "Design Engineer" | Informational, score 50 |
+| "Vice President of Design" | Hiring Manager, score 100 |
+| "Vice President of Product" | Informational, score 50 |
 
 ---
 
