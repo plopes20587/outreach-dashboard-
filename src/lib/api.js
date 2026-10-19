@@ -20,7 +20,9 @@ export const api = {
   fetchLinkedIn:  (url)             => request("/api/fetch-linkedin",            { method: "POST", body: JSON.stringify({ url }) }),
   searchLinkedIn: (company, titles) => request("/api/search-linkedin",           { method: "POST", body: JSON.stringify({ company, titles }) }),
   researchPerson: ({ url, name, company }) => request("/api/research-person",     { method: "POST", body: JSON.stringify({ url, name, company }) }),
-  pushNotion:     (contact)         => request("/api/push-notion",               { method: "POST", body: JSON.stringify({ contact }) }),
+  // today is the browser's local date ("en-CA" formats as YYYY-MM-DD). The server
+  // runs in UTC, where an evening push is already tomorrow.
+  pushNotion:     (contact)         => request("/api/push-notion",               { method: "POST", body: JSON.stringify({ contact, today: new Date().toLocaleDateString("en-CA") }) }),
   // analysis is optional freelance context from analyzePosting; pitch works without it
   generatePitch:  (posting, analysis) => request("/api/generate-pitch",          { method: "POST", body: JSON.stringify({ posting, analysis }) }),
 };

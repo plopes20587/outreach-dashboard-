@@ -1,68 +1,22 @@
 export const config = { runtime: "edge" };
 
-const CORS = {
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+import { json, preflight, missingEnv, readBody, extractJson, formatName, noEmDash, errorResponse } from "./lib/http.js";
+import { callClaude } from "./lib/anthropic.js";
 
 // The freshness levels the Contact card knows how to render. Anything else the
 // model returns is coerced to "moderate" rather than shown as an empty badge.
 const CONFIDENCE_LEVELS = ["high", "moderate", "low"];
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
-}
-
-function stripFences(text) {
-  return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-}
-
-// Extract a JSON object from the model's text. With web search on, Claude often
-// wraps the JSON in prose or citations, so a plain JSON.parse throws. Try a clean
-// parse first, then fall back to the first {...} block. Returns null on failure
-// (never throws) so the caller can respond gracefully instead of 500-ing.
-function extractJson(text) {
-  if (!text) return null;
-  const stripped = stripFences(text);
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    const start = stripped.indexOf("{");
-    const end = stripped.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(stripped.slice(start, end + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
 
 // Research a person from either a URL (Product Hunt, Crunchbase, company site,
 // LinkedIn) or a name + company. Used by the "Research a person" panel for
 // freelance acquisition (UC2). This is research/enrichment only -- it does NOT
 // write outreach messages, so it does not touch the Claude.ai handoff.
 export default async function handler(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+  const earlyResponse = preflight(request) || missingEnv("ANTHROPIC_API_KEY");
+  if (earlyResponse) return earlyResponse;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return json({ error: "ANTHROPIC_API_KEY is not configured" }, 500);
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
-  }
+  const body = await readBody(request);
+  if (!body) return json({ error: "Invalid request body" }, 400);
 
   const url = body.url?.trim() || "";
   const name = body.name?.trim() || "";
@@ -100,38 +54,9 @@ ALWAYS return valid JSON, no markdown. Use empty strings for fields you cannot f
 Only return {"error":"not_found"} if you found absolutely nothing about this person.`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "web-search-2025-03-05",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        // Thinking is off because the API rejects it alongside a forced tool
-        // call, and forcing the search is what keeps research from answering
-        // out of stale memory. max_uses caps the paid web searches per call.
-        model: "claude-sonnet-5",
-        thinking: { type: "disabled" },
-        max_tokens: 1200,
-        tool_choice: { type: "any" },
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!res.ok) {
-      const detail = await res.text();
-      console.error("Anthropic error:", detail);
-      return json({ error: "Anthropic API error", detail: res.status }, 502);
-    }
-
-    const data = await res.json();
-    const textContent = (data.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
+    // A forced web search with thinking off, which is what keeps research from
+    // answering out of stale memory. max_uses caps the paid searches.
+    const textContent = await callClaude({ prompt, maxTokens: 1200, webSearchUses: 3 });
 
     const parsed = extractJson(textContent);
 
@@ -139,22 +64,18 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
       return json({ error: "not_found" }, 404);
     }
 
-    // Format name as "First Last" with a single space, never underscore (Hard Rule #2).
-    const fullName =
-      parsed.first_name && parsed.last_name
-        ? `${parsed.first_name} ${parsed.last_name}`
-        : parsed.first_name || parsed.last_name || name;
-
     return json({
-      name:            fullName,
+      name:            formatName(parsed.first_name, parsed.last_name, name),
       first_name:      parsed.first_name      || "",
       last_name:       parsed.last_name       || "",
       title:           parsed.title           || "",
       company:         parsed.company         || company,
       location:        parsed.location        || "",
-      research_notes:  parsed.research_notes  || "",
-      company_context: parsed.company_context || "",
-      hook:            parsed.hook            || "",
+      // These three are read straight into the outreach prompt and the Notion
+      // note, so an em dash the model slipped in is stripped (Hard Rule #1).
+      research_notes:  noEmDash(parsed.research_notes  || ""),
+      company_context: noEmDash(parsed.company_context || ""),
+      hook:            noEmDash(parsed.hook            || ""),
       // Freshness metadata. confidence is validated against the three known
       // values because it drives a badge variant in the Contact card, and an
       // unexpected string would render an uncolored pill.
@@ -163,7 +84,6 @@ Only return {"error":"not_found"} if you found absolutely nothing about this per
       sources:         Array.isArray(parsed.sources) ? parsed.sources.filter(Boolean).slice(0, 3) : [],
     });
   } catch (err) {
-    console.error("research-person:", err.message);
-    return json({ error: "Failed to research person" }, 500);
+    return errorResponse(err, "research-person", "Failed to research person");
   }
 }

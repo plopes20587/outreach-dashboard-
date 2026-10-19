@@ -1,10 +1,8 @@
 export const config = { runtime: "edge" };
 
 import { PAT_PROFILE } from "./lib/profile.js";
-
-// Sonnet 5 across every endpoint (CLAUDE.md Hard Rule #7). The pitch is pure
-// writing with no web search, so it keeps adaptive thinking at medium effort.
-const MODEL = "claude-sonnet-5";
+import { json, preflight, missingEnv, readBody, extractJson, noEmDash, errorResponse } from "./lib/http.js";
+import { callClaude } from "./lib/anthropic.js";
 
 // Structured outputs: the API guarantees the reply matches this shape, so a
 // pitch can never come back missing its message or notes.
@@ -17,23 +15,6 @@ const PITCH_SCHEMA = {
   required: ["message", "notes"],
   additionalProperties: false,
 };
-
-const CORS = {
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
-}
-
-function stripFences(text) {
-  return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-}
 
 const SYSTEM_PROMPT = `${PAT_PROFILE}
 
@@ -57,20 +38,11 @@ Format: 2-3 short paragraphs. No greeting header. No subject line. Under 250 wor
 After the message, include a short PERSONALIZATION NOTES section explaining 2-3 key choices made.`;
 
 export default async function handler(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+  const earlyResponse = preflight(request) || missingEnv("ANTHROPIC_API_KEY");
+  if (earlyResponse) return earlyResponse;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return json({ error: "ANTHROPIC_API_KEY is not configured" }, 500);
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
-  }
+  const body = await readBody(request);
+  if (!body) return json({ error: "Invalid request body" }, 400);
 
   const { posting, analysis } = body;
   if (!posting?.trim()) {
@@ -106,48 +78,25 @@ Return as JSON:
 }`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        // Adaptive thinking counts against max_tokens, so leave room for it
-        // on top of a ~250 word message. Unused headroom is not billed.
-        max_tokens: 4000,
-        output_config: {
-          effort: "medium",
-          format: { type: "json_schema", schema: PITCH_SCHEMA },
-        },
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
-      }),
+    // The pitch is pure writing with no web search, so it keeps adaptive
+    // thinking at medium effort. Thinking counts against maxTokens, so the
+    // ceiling leaves room for it on top of a ~250 word message.
+    const textContent = await callClaude({
+      system: SYSTEM_PROMPT,
+      prompt: userMessage,
+      maxTokens: 4000,
+      effort: "medium",
+      schema: PITCH_SCHEMA,
     });
+    // Structured outputs already guarantee clean JSON; extractJson is defensive.
+    const parsed = extractJson(textContent);
 
-    if (!res.ok) {
-      const detail = await res.text();
-      console.error("Anthropic error:", detail);
-      return json({ error: "Anthropic API error", detail: res.status }, 502);
-    }
-
-    const data = await res.json();
-    const textBlock = data.content?.find((b) => b.type === "text");
-    // stripFences is defensive only -- structured outputs already give clean JSON.
-    const parsed = JSON.parse(stripFences(textBlock?.text || "{}"));
-
-    if (!parsed.message || !parsed.notes) {
+    if (!parsed?.message || !parsed?.notes) {
       return json({ error: "Unexpected response format from model" }, 502);
     }
 
-    // Pat's hard rule: never use em dashes. The prompt says so, but strip any
-    // that slip through anyway, since one in a sent message is costly.
-    const noEmDash = (s) => s.replace(/\s*\u2014\s*/g, ", ");
     return json({ message: noEmDash(parsed.message), notes: noEmDash(parsed.notes) });
   } catch (err) {
-    console.error("generate-pitch:", err.message);
-    return json({ error: "Failed to generate message" }, 500);
+    return errorResponse(err, "generate-pitch", "Failed to generate message");
   }
 }

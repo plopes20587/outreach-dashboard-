@@ -1,46 +1,33 @@
 export const config = { runtime: "edge" };
 
-const CORS = {
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+import { json, preflight, missingEnv, readBody, UpstreamError, upstreamMessage, errorResponse } from "./lib/http.js";
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// "Today" has to be Pat's today. This function runs in UTC, so computing the
+// date here stamped a 6pm US push with tomorrow's date. The browser sends its
+// local date instead; UTC is only the fallback for a request without one.
+function resolveToday(clientDate) {
+  return DATE_PATTERN.test(clientDate || "")
+    ? clientDate
+    : new Date().toISOString().split("T")[0];
 }
 
-function today() {
-  return new Date().toISOString().split("T")[0];
-}
-
-function tenDaysFromNow() {
-  const d = new Date();
-  d.setDate(d.getDate() + 10);
-  return d.toISOString().split("T")[0];
+// Date-only math on a "YYYY-MM-DD" string. Done in UTC on purpose: the input
+// is already Pat's local date, so no time zone should shift it again.
+function addDays(isoDate, days) {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().split("T")[0];
 }
 
 export default async function handler(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+  const earlyResponse =
+    preflight(request) || missingEnv("NOTION_API_KEY", "NOTION_DATABASE_ID");
+  if (earlyResponse) return earlyResponse;
 
-  if (!process.env.NOTION_API_KEY) {
-    return json({ error: "NOTION_API_KEY is not configured" }, 500);
-  }
-  if (!process.env.NOTION_DATABASE_ID) {
-    return json({ error: "NOTION_DATABASE_ID is not configured" }, 500);
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
-  }
+  const body = await readBody(request);
+  if (!body) return json({ error: "Invalid request body" }, 400);
 
   const { contact } = body;
   if (!contact?.name?.trim()) {
@@ -52,6 +39,7 @@ export default async function handler(request) {
 
   const dateTriggered =
     contact.status === "Email Sent" || contact.status === "Follow-up Sent";
+  const today = resolveToday(body.today);
 
   const properties = {
     "Contact Name": { title: [{ text: { content: contact.name } }] },
@@ -67,8 +55,8 @@ export default async function handler(request) {
     ...(contact.notes && { "Notes": { rich_text: [{ text: { content: String(contact.notes).slice(0, 2000) } }] } }),
     "Status": { status: { name: contact.status || "Did not send" } },
     ...(dateTriggered && {
-      "Email Sent":     { date: { start: today() } },
-      "Follow up date": { date: { start: tenDaysFromNow() } },
+      "Email Sent":     { date: { start: today } },
+      "Follow up date": { date: { start: addDays(today, 10) } },
     }),
   };
 
@@ -87,15 +75,12 @@ export default async function handler(request) {
     });
 
     if (!res.ok) {
-      const detail = await res.text();
-      console.error("Notion error:", detail);
-      return json({ error: `Notion API error ${res.status}: ${detail}` }, 502);
+      throw new UpstreamError("Notion", res.status, await upstreamMessage(res));
     }
 
     const page = await res.json();
     return json({ id: page.id, url: page.url });
   } catch (err) {
-    console.error("push-notion:", err.message);
-    return json({ error: "Failed to push to Notion" }, 500);
+    return errorResponse(err, "push-notion", "Failed to push to Notion");
   }
 }

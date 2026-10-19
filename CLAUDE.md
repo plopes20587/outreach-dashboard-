@@ -82,8 +82,12 @@ outreach-app/
 │   ├── fetch-linkedin.js         # POST {url} → calls Anthropic with web_search to scrape a profile
 │   ├── search-linkedin.js        # POST {company, titles} → calls Anthropic with web_search for LinkedIn fallback
 │   ├── research-person.js        # POST {url}|{name,company} → calls Anthropic with web_search to research a founder/CEO (UC2)
-│   ├── push-notion.js            # POST {contact} → creates a page in the Notion tracker
-│   └── generate-pitch.js         # POST {posting, analysis?} → calls Anthropic (Sonnet 5) to write a freelance pitch (Contra/Upwork/etc.)
+│   ├── push-notion.js            # POST {contact, today} → creates a page in the Notion tracker
+│   ├── generate-pitch.js         # POST {posting, analysis?} → calls Anthropic (Sonnet 5) to write a freelance pitch (Contra/Upwork/etc.)
+│   └── lib/
+│       ├── profile.js            # PAT_PROFILE (a copy of src/lib/profile.js)
+│       ├── http.js               # CORS, json(), preflight, env + body checks, extractJson, formatName, noEmDash, errors
+│       └── anthropic.js          # MODEL + callClaude(): the one place the Messages API is called
 ├── src/
 │   ├── App.jsx                   # Root wrapper; renders Dashboard (no tabs, no router)
 │   ├── Dashboard.jsx             # The single page: owns all shared state, renders the four cards in a two-column workspace
@@ -485,21 +489,33 @@ All functions are **Edge Runtime** (`export const config = { runtime: "edge" }`)
 
 All functions return JSON. All set CORS headers based on `ALLOWED_ORIGIN` env var (default `*` for dev).
 
-### Standard CORS Helper
+### Shared helpers (`api/lib/http.js`, `api/lib/anthropic.js`)
 
-Each function uses this pattern:
+Every endpoint imports its plumbing instead of copying it. These used to be pasted into up to seven files, and the copies had already started to drift. Add new shared behavior here, never as a fresh copy in an endpoint.
 
 ```js
-const corsHeaders = {
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+export default async function handler(request) {
+  const earlyResponse = preflight(request) || missingEnv("ANTHROPIC_API_KEY");
+  if (earlyResponse) return earlyResponse;
 
-if (request.method === "OPTIONS") {
-  return new Response(null, { status: 204, headers: corsHeaders });
+  const body = await readBody(request);
+  if (!body) return json({ error: "Invalid request body" }, 400);
+  // ...validate, build the prompt...
+  try {
+    const text = await callClaude({ prompt, maxTokens: 400, webSearchUses: 2 });
+    // ...extractJson(text), shape the response...
+  } catch (err) {
+    return errorResponse(err, "endpoint-name", "Failed to ...");
+  }
 }
 ```
+
+- `callClaude({ prompt, system?, maxTokens, webSearchUses?, effort?, schema? })` returns the reply text. `webSearchUses` selects the forced-search shape (thinking disabled, `tool_choice: any`, web_search capped at that many uses); `effort` selects adaptive thinking, and `schema` adds structured outputs. `MODEL` lives here, so changing the model is one line.
+- `extractJson` handles both objects and arrays wrapped in prose, and returns `null` instead of throwing.
+- `formatName` is Hard Rule #2 and `noEmDash` is Hard Rule #1 in code. Any model text that reaches a sent message or Notion goes through `noEmDash` (the pitch, and research's notes, context, and hook).
+
+**Error shape.** Every failure is `{ error }`. A failure from a service we call throws `UpstreamError` and becomes a **502** whose message is that service's own short error (`"Notion error 400: Status is not a property..."`), read out of its JSON by `upstreamMessage` and capped at 200 characters, because those usually say what to fix. Anything else is our own bug: a generic **500**, with details only in the server log. Raw response bodies, stack traces, and env values never reach the client.
+
 
 ### `/api/analyze-posting` (POST)
 
@@ -606,13 +622,15 @@ Use the real name from their profile, not the URL slug. If not found, return: {"
 
 **Request:** `{ company: string, titles: string[] }`
 
-**Behavior:** Call Anthropic with web_search. Run `site:linkedin.com/in "${company}" "${title}"` queries for each title. Parse out real LinkedIn profile URLs from results. Return array of `{ name, linkedin, title, snippet, contact_type }`. Uses `claude-sonnet-5` with thinking disabled (same reason as `fetch-linkedin`), `max_tokens` 512 and web_search capped at `max_uses: 2` for cost efficiency.
+**Behavior:** Call Anthropic with web_search. Run `site:linkedin.com/in "${company}" "${title}"` queries for each title. Parse out real LinkedIn profile URLs from results. Return array of `{ name, linkedin, title, snippet }`. **No `contact_type`:** the model used to choose it from a list without "Other", and `mapLinkedInResult` trusted it over `classifyTitle`, so an irrelevant title found on LinkedIn (a CFO) skipped the drop rule. `classifyTitle` alone now types both sources. Uses `claude-sonnet-5` with thinking disabled (same reason as `fetch-linkedin`), `max_tokens` 512 and web_search capped at `max_uses: 2` for cost efficiency.
 
 This is the LinkedIn fallback when Hunter doesn't return useful results, and the frontend now calls it **only when Hunter returns fewer than 2 contacts** (cost efficiency). Note: this is unreliable since LinkedIn blocks Google indexing of profiles — keep the implementation as it is in the current artifact and accept that it may return empty.
 
 ### `/api/push-notion` (POST)
 
-**Request:** `{ contact: { name, company, title, location, email, linkedin, contactType, leadType, notes, status } }`
+**Request:** `{ contact: { name, company, title, location, email, linkedin, contactType, leadType, notes, status }, today: "YYYY-MM-DD" }`
+
+`today` is the browser's local date (`toLocaleDateString("en-CA")`). The function runs in UTC, so computing the date server side stamped an evening US push with tomorrow's date. The server validates it, falls back to UTC only when it is missing, and derives the follow-up date with date-only math (`addDays(today, 10)`).
 
 `notes` is composed by the frontend from the research output (`buildResearchNotes`), not stored on the contact record. It is sliced to 2000 characters server-side because Notion rejects a longer `rich_text` object outright rather than truncating it.
 
@@ -639,10 +657,10 @@ POST to `https://api.notion.com/v1/pages` with body:
     ...(contact.contactType && { "Contact Type": { select: { name: contact.contactType } } }),
     ...(contact.leadType    && { "Lead Type":    { select: { name: contact.leadType    } } }),
     ...(contact.notes && { "Notes": { rich_text: [{ text: { content: contact.notes.slice(0, 2000) } }] } }),
-    "Status": { select: { name: contact.status || "Did not send" } },
+    "Status": { status: { name: contact.status || "Did not send" } },  // Notion's status type, not select
     ...((contact.status === "Email Sent" || contact.status === "Follow-up Sent") && {
-      "Email Sent":     { date: { start: today() } },
-      "Follow up date": { date: { start: tenDaysFromNow() } },
+      "Email Sent":     { date: { start: today } },
+      "Follow up date": { date: { start: addDays(today, 10) } },
     }),
   }
 }
@@ -905,7 +923,7 @@ Build all seven `/api/*` endpoints. Test each one independently by hitting it wi
 - Use Edge Runtime
 - Set CORS headers
 - Validate required env vars and return 500 with a clear message if missing
-- Return JSON with consistent shape: `{ ...data }` on success, `{ error: "...", detail?: "..." }` on failure
+- Return JSON with consistent shape: `{ ...data }` on success, `{ error: "..." }` on failure (see Shared helpers for the 502/500 split)
 - Never expose env vars or stack traces to the client
 
 ### Phase 5: Wiring

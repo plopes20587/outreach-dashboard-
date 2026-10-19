@@ -1,24 +1,13 @@
 export const config = { runtime: "edge" };
 
-const CORS = {
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
-}
+import { json, preflight, missingEnv, UpstreamError, upstreamMessage, errorResponse } from "./lib/http.js";
 
 // Hunter sits behind Cloudflare, which intermittently returns a transient
 // 502/503/504 ("Bad Gateway") even when the API itself is healthy. These
 // almost always succeed on a quick retry, so we retry transient upstream
 // failures with a short increasing backoff before giving up. We do NOT retry
 // 4xx errors (bad key, bad domain), since those will never self-resolve.
-// Returns { data } on success or { error, status, detail } on failure.
+// Returns Hunter's parsed response, or throws UpstreamError.
 async function fetchHunter(params) {
   const hunterUrl =
     "https://api.hunter.io/v2/domain-search?" +
@@ -26,7 +15,6 @@ async function fetchHunter(params) {
 
   const TRANSIENT_STATUSES = [502, 503, 504];
   const MAX_ATTEMPTS = 3;
-  let lastErrorDetail = "";
   let lastErrorStatus = 502;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -34,25 +22,22 @@ async function fetchHunter(params) {
       const res = await fetch(hunterUrl);
 
       if (res.ok) {
-        return { data: await res.json() };
+        return await res.json();
       }
 
-      const detail = await res.text();
-      lastErrorDetail = detail;
       lastErrorStatus = res.status;
 
       // Non-transient (e.g. 401 bad key, 400 bad domain): fail immediately.
       if (!TRANSIENT_STATUSES.includes(res.status)) {
-        console.error(`Hunter error ${res.status}:`, detail);
-        return { error: `Hunter.io error ${res.status}: ${detail}`, status: 502 };
+        throw new UpstreamError("Hunter.io", res.status, await upstreamMessage(res));
       }
 
       console.error(
         `Hunter transient error ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS})`
       );
     } catch (err) {
+      if (err instanceof UpstreamError) throw err;
       // Network-level failure (DNS, connection reset): also worth retrying.
-      lastErrorDetail = err.message;
       console.error(
         `find-contacts fetch failed (attempt ${attempt}/${MAX_ATTEMPTS}):`,
         err.message
@@ -65,11 +50,11 @@ async function fetchHunter(params) {
     }
   }
 
-  return {
-    error: `Hunter.io is temporarily unavailable (${lastErrorStatus}). Please try again in a moment.`,
-    detail: lastErrorDetail,
-    status: 502,
-  };
+  throw new UpstreamError(
+    "Hunter.io",
+    lastErrorStatus,
+    "temporarily unavailable, please try again in a moment"
+  );
 }
 
 // The plan caps a search at 10 results, and unfiltered those slots fill with
@@ -86,13 +71,8 @@ const namedCount = (data) =>
   (data?.data?.emails || []).filter((e) => e.first_name || e.last_name).length;
 
 export default async function handler(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
-
-  if (!process.env.HUNTER_API_KEY) {
-    return json({ error: "HUNTER_API_KEY is not configured" }, 500);
-  }
+  const earlyResponse = preflight(request) || missingEnv("HUNTER_API_KEY");
+  if (earlyResponse) return earlyResponse;
 
   const { searchParams } = new URL(request.url);
   const domain = searchParams.get("domain")?.trim();
@@ -114,18 +94,23 @@ export default async function handler(request) {
   // dropped anyway.
   const baseParams = { domain: cleanDomain, limit: String(limit), type: "personal" };
 
-  let best = null;
-  for (const department of DEPARTMENT_TIERS) {
-    const result = await fetchHunter(department ? { ...baseParams, department } : baseParams);
-    if (result.error) {
-      // A failure on the first tier is the real error. A later tier failing
-      // should not throw away what an earlier tier already found.
-      if (!best) return json({ error: result.error, detail: result.detail }, result.status);
-      break;
+  try {
+    let best = null;
+    for (const department of DEPARTMENT_TIERS) {
+      let tierData;
+      try {
+        tierData = await fetchHunter(department ? { ...baseParams, department } : baseParams);
+      } catch (err) {
+        // A failure on the first tier is the real error. A later tier failing
+        // should not throw away what an earlier tier already found.
+        if (!best) throw err;
+        break;
+      }
+      if (!best || namedCount(tierData) > namedCount(best)) best = tierData;
+      if (namedCount(best) >= 2) break;
     }
-    if (!best || namedCount(result.data) > namedCount(best)) best = result.data;
-    if (namedCount(best) >= 2) break;
+    return json(best);
+  } catch (err) {
+    return errorResponse(err, "find-contacts", "Failed to search Hunter.io");
   }
-
-  return json(best);
 }

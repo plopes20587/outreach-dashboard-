@@ -74,16 +74,18 @@ export function mapLinkedInResult(r) {
   const name = (r.name || "").trim();
   if (!name) return null;
 
+  // The type comes from classifyTitle alone, never from the search result. The
+  // model used to pick it, from a list without "Other", so a CFO found on
+  // LinkedIn was labeled relevant and slipped past the drop below.
   const { score, contactType } = classifyTitle(r.title || "");
-  const finalType = r.contact_type || contactType;
-  if (finalType === "Other") return null;
+  if (contactType === "Other") return null;
 
   return {
     name,
     email: "",
     title: r.title || "",
     linkedin: r.linkedin || "",
-    contact_type: finalType,
+    contact_type: contactType,
     snippet: r.snippet || "",
     score,
   };

@@ -1,23 +1,8 @@
 export const config = { runtime: "edge" };
 
 import { PAT_PROFILE } from "./lib/profile.js";
-
-const CORS = {
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
-}
-
-function stripFences(text) {
-  return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-}
+import { json, preflight, missingEnv, readBody, extractJson, errorResponse } from "./lib/http.js";
+import { callClaude } from "./lib/anthropic.js";
 
 // Freelance criteria live here rather than in PAT_PROFILE because they are
 // specific to contract work and do not apply to the full-time job analysis.
@@ -148,20 +133,11 @@ const EMAIL_DOMAIN_RULE = `email_domain is the domain the company's employees us
 const FREELANCE_SCHEMA = `{"posting_type":"freelance","fit_score":<0-100>,"client":"<name or empty>","project_type":"<short description>","tier":"Design audit|Landing page or marketing site|Product or web app UI/UX|Retainer|unclear","industry":"<industry, reported only>","rate":"<max 30 chars, or 'Not stated'>","rate_fit":"strong|moderate|mismatch|unstated","hours":"<max 30 chars, or 'Not stated'>","time_fit":"strong|moderate|mismatch|unstated","scope_fit":"strong|moderate|mismatch","strengths":["<2-4>"],"gaps":["<2-4>"],"red_flags":["<0-4, empty array if clean>"],"summary":"<3-4 sentences>"}`;
 
 export default async function handler(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+  const earlyResponse = preflight(request) || missingEnv("ANTHROPIC_API_KEY");
+  if (earlyResponse) return earlyResponse;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return json({ error: "ANTHROPIC_API_KEY is not configured" }, 500);
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
-  }
+  const body = await readBody(request);
+  if (!body) return json({ error: "Invalid request body" }, 400);
 
   const { posting, forceType } = body;
   if (!posting?.trim()) {
@@ -193,7 +169,9 @@ Freelance signals: hourly rate, project budget, fixed fee, "contract," "freelanc
 When signals conflict, weight payment structure most heavily: an annual salary means full-time, an hourly or project rate means freelance.`;
 
   const rubricSection = override
-    ? (override === "freelance" ? FREELANCE_RUBRIC : FULLTIME_RUBRIC)
+    ? override === "freelance"
+      ? FREELANCE_RUBRIC
+      : FULLTIME_RUBRIC
     : `IF FULL-TIME, ${FULLTIME_RUBRIC}\n\nIF FREELANCE, ${FREELANCE_RUBRIC}`;
 
   const schemaSection = override
@@ -216,38 +194,22 @@ ${wantsFreelance ? `\n${BADGE_RULES}\n` : ""}${wantsFullTime ? `\n${EMAIL_DOMAIN
 ${schemaSection}`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        // Adaptive thinking (Sonnet 5's default) helps rubric scoring. It counts
-        // against max_tokens, so the ceiling leaves room for it on top of the
-        // JSON; unused headroom is not billed. Medium effort limits spend.
-        model: "claude-sonnet-5",
-        max_tokens: 4000,
-        output_config: { effort: "medium" },
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!res.ok) {
-      const detail = await res.text();
-      console.error("Anthropic error:", detail);
-      return json({ error: `Anthropic error ${res.status}: ${detail}` }, 502);
+    // Adaptive thinking (Sonnet 5's default) helps rubric scoring. It counts
+    // against maxTokens, so the ceiling leaves room for it on top of the JSON;
+    // unused headroom is not billed. Medium effort limits spend.
+    const textContent = await callClaude({ prompt, maxTokens: 4000, effort: "medium" });
+    const parsed = extractJson(textContent);
+    if (!parsed) {
+      return json({ error: "Unexpected response format from model" }, 502);
     }
-
-    const data = await res.json();
-    const textBlock = data.content?.find((b) => b.type === "text");
-    const parsed = JSON.parse(stripFences(textBlock?.text || "{}"));
 
     // The whole UI branches on posting_type, so a response missing it would
     // render as neither layout. Fall back to the override when there was one,
     // otherwise to full-time, rather than returning something unrenderable.
-    if (parsed.posting_type !== "full-time" && parsed.posting_type !== "freelance") {
+    if (
+      parsed.posting_type !== "full-time" &&
+      parsed.posting_type !== "freelance"
+    ) {
       parsed.posting_type = override || "full-time";
     }
 
@@ -267,7 +229,6 @@ ${schemaSection}`;
 
     return json(parsed);
   } catch (err) {
-    console.error("analyze-posting:", err.message);
-    return json({ error: "Failed to analyze posting" }, 500);
+    return errorResponse(err, "analyze-posting", "Failed to analyze posting");
   }
 }
