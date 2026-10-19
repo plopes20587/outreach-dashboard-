@@ -28,6 +28,11 @@ export async function callClaude({ prompt, system, maxTokens, webSearchUses, eff
     ...(usesWebSearch && {
       thinking: { type: "disabled" },
       tool_choice: { type: "any" },
+      // Deliberately the 2025 version. web_search_20260209 (dynamic filtering)
+      // was tested in Oct 2026 on the same three lookups: ~2.5x the tokens,
+      // 10-20x slower (up to 140s, past Edge's response window), research
+      // confidence dropped from high to low, and LinkedIn search found 0 people
+      // instead of 3. Re-test before switching.
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: webSearchUses }],
     }),
     ...(effort && {

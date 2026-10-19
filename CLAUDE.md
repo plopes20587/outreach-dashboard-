@@ -511,6 +511,7 @@ export default async function handler(request) {
 ```
 
 - `callClaude({ prompt, system?, maxTokens, webSearchUses?, effort?, schema? })` returns the reply text. `webSearchUses` selects the forced-search shape (thinking disabled, `tool_choice: any`, web_search capped at that many uses); `effort` selects adaptive thinking, and `schema` adds structured outputs. `MODEL` lives here, so changing the model is one line.
+- Web search stays on `web_search_20250305` (with its `anthropic-beta` header) on purpose. The newer `web_search_20260209` was compared on the same three lookups in Oct 2026 and lost on every measure: ~2.5x the tokens, 10-20x slower (up to 140s), research confidence dropped from high to low, and LinkedIn search found 0 people instead of 3. Re-run that comparison before switching.
 - `extractJson` handles both objects and arrays wrapped in prose, and returns `null` instead of throwing.
 - `formatName` is Hard Rule #2 and `noEmDash` is Hard Rule #1 in code. Any model text that reaches a sent message or Notion goes through `noEmDash` (the pitch, and research's notes, context, and hook).
 
