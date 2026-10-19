@@ -100,7 +100,7 @@ const FULLTIME_RUBRIC = `Score across five dimensions:
 2. Role level fit
    Strong: Lead, Staff, Principal, or UX Engineer with strategic scope
    Moderate: Senior Product Designer with clear ownership
-   Mismatch: Senior IC with no strategic involvement or purely executional scope
+   Mismatch: Junior IC with no strategic involvement or purely executional scope
 
 3. Strategic involvement
    Strong: "own the design direction," "partner with leadership," "define the experience," "shape product strategy," "influence roadmap"
@@ -123,7 +123,7 @@ const FREELANCE_RUBRIC = `Score against the freelance contract scoring criteria 
 // Only meaningful for freelance results: both fields render as small badges, and
 // a verbatim string wraps the badge row onto multiple lines.
 const BADGE_RULES = `The "rate" and "hours" fields are rendered as small badges in a UI, so they must be SHORT and scannable. Keep each under 30 characters. Compress rather than quote verbatim.
-Good rate values: "$95/hour", "$18,000 fixed (~$120/hr)", "Not stated", "Equity only".
+Good rate values: "$80/hour", "$18,000 fixed (~$120/hr)", "Not stated", "Equity only".
 Good hours values: "15 hrs/week, 10 weeks", "12-15 hrs/week", "Full-time", "Not stated".
 Put the detail and the reasoning in the summary, not in these two fields.`;
 
