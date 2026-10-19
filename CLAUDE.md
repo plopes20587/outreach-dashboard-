@@ -589,7 +589,7 @@ Freelance:
 
 > The limit is 10 because Pat's Hunter.io plan caps a domain-search at 10 results. Requesting more returns a `pagination_error` 400 from Hunter, which surfaces to the UI as a 502. Do not raise this without checking the plan first.
 
-**Behavior:** Sanitize domain, hit `https://api.hunter.io/v2/domain-search` with `type=personal` (role inboxes like `info@` have no name and are dropped anyway), and return Hunter's response as-is. The server clamps `limit` to 10.
+**Behavior:** Sanitize domain, hit `https://api.hunter.io/v2/domain-search` with the key in an `X-API-KEY` header (never the URL, which ends up in logs) and `type=personal` (role inboxes like `info@` have no name and are dropped anyway), and return Hunter's response as-is. The server clamps `limit` to 10.
 
 **Department tiers.** Unfiltered, the 10 slots fill with engineers and sales at any large company and the frontend drops them all (consensys.io: 2 of 10 kept unfiltered, 7 of 10 on `design,hr`). So `DEPARTMENT_TIERS` widens in steps: `design,hr`, then `management,executive`, then unfiltered, because Hunter leaves many people untagged. It stops at the first tier with 2+ named people and returns whichever tier had the most. Hunter does not charge for an empty search, so the extra tiers cost little on a dead domain. A later tier failing never discards what an earlier tier found.
 

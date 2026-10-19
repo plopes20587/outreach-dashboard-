@@ -9,9 +9,10 @@ import { json, preflight, missingEnv, UpstreamError, upstreamMessage, errorRespo
 // 4xx errors (bad key, bad domain), since those will never self-resolve.
 // Returns Hunter's parsed response, or throws UpstreamError.
 async function fetchHunter(params) {
-  const hunterUrl =
-    "https://api.hunter.io/v2/domain-search?" +
-    new URLSearchParams({ ...params, api_key: process.env.HUNTER_API_KEY });
+  // The key travels as a header rather than in the URL, since URLs are
+  // routinely written to logs and headers usually are not.
+  const hunterUrl = "https://api.hunter.io/v2/domain-search?" + new URLSearchParams(params);
+  const hunterHeaders = { "X-API-KEY": process.env.HUNTER_API_KEY };
 
   const TRANSIENT_STATUSES = [502, 503, 504];
   const MAX_ATTEMPTS = 3;
@@ -19,7 +20,7 @@ async function fetchHunter(params) {
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(hunterUrl);
+      const res = await fetch(hunterUrl, { headers: hunterHeaders });
 
       if (res.ok) {
         return await res.json();
