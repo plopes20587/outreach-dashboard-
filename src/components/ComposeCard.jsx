@@ -51,7 +51,7 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     "## Why I'm reaching out",
     analysis.posting_type === "freelance"
       ? `- The ${analysis.client ? `${analysis.client} ` : ""}${analysis.project_type || "freelance"} contract in the posting below`
-      : `- The ${analysis.company ? `${analysis.company} ` : ""}role in the posting below`,
+      : `- The ${analysis.company ? `${analysis.company} ` : ""}${analysis.job_title || "role"} in the posting below${analysis.job_title ? ` (exact title from the posting: "${analysis.job_title}")` : ""}`,
     analysis.strengths?.length && "- Angles to lead with:",
     ...(analysis.strengths || []).map((strength) => `  - ${strength}`),
   ];
@@ -78,10 +78,20 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     "</posting>",
   ];
 
+  // Voice rules live in the outreach-composer skill and my project memory. Only
+  // the rules that change from message to message are restated here.
   const instructionSection = [
     "## How to write it",
-    `- Use my outreach-composer skill and the ${suggestTemplate(contact)} reference template.`,
-    "- Be specific: open with one concrete detail from the posting or the hook, and name the overlap with one piece of my work. No generic praise.",
+    "- Run my skills in order: humanizer, then outreach-composer, then stop-slop. Open the skill files each time.",
+    `- Use the ${suggestTemplate(contact)} reference template. This is the first message only, so no follow-up language.`,
+    analysis?.posting_type !== "freelance" && analysis?.job_title &&
+      `- Use the exact title "${analysis.job_title}" and nothing else. Check it against the posting before using it.`,
+    "- Plain subject line for an email, written the way a person would say it. Target about 85 words: one hook, one proof point with a number, one small question the posting does not already answer, my portfolio link, a graceful exit.",
+    "- Open with who I am and what I want in plain words. Never open by quoting or paraphrasing the posting or something they wrote and then drawing a conclusion from it.",
+    "- Lead with the project closest to this role (e-commerce and shopping proof first). Do not lead with Verizon or telecom unless it is the strongest signal for this specific role.",
+    "- Only claim what I can defend in a live conversation. If any detail about my background is unclear, ask me before drafting.",
+    "- Shape it for this person and contact type. Do not reuse the same opener or structure as my other drafts.",
+    "- Be specific: one concrete detail from the posting or the hook, and the overlap with one piece of my work. No generic praise, no performed admiration.",
     "- Source priority: the contact fields, then the posting, then the research. The posting is first-party and current; the research may be out of date.",
     "- Never hedge. If you are not sure a detail is still current, leave it out rather than qualifying it.",
   ];

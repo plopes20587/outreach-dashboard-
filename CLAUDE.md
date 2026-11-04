@@ -552,7 +552,7 @@ Industry tiers: primary (strong) travel, gaming, entertainment, e-commerce; seco
 
 - **Rate.** $80/hr floor for hourly work, $750 floor for a fixed-price project. Fixed budgets are also converted to an implied hourly and sanity checked against the hourly bands; when the total clears the project floor but the implied hourly does not, the scope is too big for the budget, and `rate_fit` scores the implied hourly. `rate_fit` scores the converted number, so a fixed-price budget can be `strong`. Doubt about the hour estimate belongs in `gaps`, not in a second markdown of the same rate.
 - **Below-floor flex.** Pat will go under his floor for a genuinely strong portfolio piece (travel, gaming, entertainment, e-commerce, or anything publicly shippable and nameable). This raises `fit_score` but never `rate_fit`, which stays a pure judgment of the money: it is the one case where a `mismatch` rate can still belong to a contract worth pursuing. The rule is deliberately one-directional. Portfolio value is a reason to take an underpaid contract, never a reason to discount a well-paid one, so weak portfolio value must not be listed as a gap when the rate already clears the floor.
-- **Time.** Freelance availability is 5 to 10 hrs/week alongside the full-time job. At or under 10 is `strong`; above 10 up to 20 is `moderate` and the strain gets named in `gaps`; above 20 is `mismatch`. Required weekday daytime availability (standups, core hours, on-call) is a `mismatch` regardless of the hour count.
+- **Time.** Freelance availability is 10 to 20 hrs/week alongside the full-time job. At or under 20 is `strong`; above 20 up to 25 is `moderate` and the strain gets named in `gaps`; above 25 is `mismatch`. Required weekday daytime availability (standups, core hours, on-call) is a `mismatch` regardless of the hour count.
 - **Service tiers.** Four packages -- Design audit ($750), Landing page or marketing site ($2,500-$4,500), Product or web app UI/UX ($6,000-$10,000), Retainer ($80/hr, 5 hrs/week minimum). The matched tier is returned in `tier` and is what a quote gets built from. A budget well under its tier's range is a **gap, not a red flag**: it usually means the client underestimated the work, which is a conversation, not a walk-away. `unclear` when the posting does not describe enough to place it.
 - **Pricing model.** Fixed for defined scope, hourly for open-ended work. A mismatch between the two (an ongoing engagement at one fixed price, or a tight deliverable pinned to an hourly cap) is flagged in `gaps` as a term to renegotiate. This is separate from whether the number itself is good.
 - **Scope** against Pat's product design and front-end strengths, including Framer and Webflow builds. **Red flags** lower the score.
@@ -566,7 +566,7 @@ The prompt also caps `rate` and `hours` at 30 characters and gives compressed ex
 
 Full-time:
 ```json
-{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","email_domain":"<domain staff work email uses, or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4>"],"gaps":["<2-4>"],"summary":"<4-5 sentences>","search_titles":["<t1>","<t2>","<t3>"]}
+{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","job_title":"<exact title from the posting, or empty>","email_domain":"<domain staff work email uses, or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4>"],"gaps":["<2-4>"],"summary":"<4-5 sentences>","search_titles":["<t1>","<t2>","<t3>"]}
 ```
 
 Freelance:
@@ -774,10 +774,10 @@ These helpers live in `src/lib/contacts.js` and are imported by `FindPeople.jsx`
 
 | Category | Score | Criteria |
 |----------|-------|---------|
-| Hiring Manager | 100 | Design/UX/experience + leadership keyword, OR creative director/head of creative |
+| Hiring Manager | 100 | Design/UX/experience + leadership keyword |
 | Referral | 80 | Design IC titles (product designer, UX designer, etc.) -- excludes graphic/fashion/industrial/game |
 | Recruiter | 70 | Recruit/talent/sourcer titles -- excludes sales, finance, legal, ops recruiters |
-| Informational | 50 | Product manager/lead/director/VP/CPO, design ops, UX research, service/content designer, design engineer |
+| Informational | 50 | Creative director/head of creative (flagged: confirm they sit in product design), product manager/lead/director/VP/CPO, design ops, UX research, service/content designer, design engineer |
 | Boss Hunt | 40 | Founder, co-founder, CEO -- fallback for small startups with no design leader |
 | Other | 10 | Everything else (CFO, CTO, VP Sales, marketing, engineering, ops, legal, etc.) and contacts with no title. **Dropped from results** (not design-relevant). |
 

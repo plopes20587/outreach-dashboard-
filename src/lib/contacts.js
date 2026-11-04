@@ -32,7 +32,11 @@ export function classifyTitle(title = "") {
 
   const founder = /(founder|co-founder|ceo)/i.test(title);
 
-  if (designLeader || creativeLeader) return { score: 100, contactType: "Hiring Manager" };
+  if (designLeader) return { score: 100, contactType: "Hiring Manager" };
+  // Creative, brand, and art leaders sit in a separate org from product design at
+  // many companies, so they are not assumed to be hiring managers. They rank as
+  // Informational and the card says why, so Pat confirms the org before a draft.
+  if (creativeLeader) return { score: 50, contactType: "Informational", needsOrgCheck: true };
   if (designIC)                       return { score: 80,  contactType: "Referral" };
   if (recruiter)                      return { score: 70,  contactType: "Recruiter" };
   if (informational)                  return { score: 50,  contactType: "Informational" };
@@ -48,7 +52,7 @@ export function classifyContact(person, targetTitles = []) {
   if (!fullName) return null;
 
   const title = person.position || "";
-  let { score, contactType } = classifyTitle(title);
+  let { score, contactType, needsOrgCheck } = classifyTitle(title);
   if (contactType === "Other") return null;
 
   const t = title.toLowerCase();
@@ -63,7 +67,7 @@ export function classifyContact(person, targetTitles = []) {
     title,
     linkedin: person.linkedin || "",
     contact_type: contactType,
-    snippet: person.department ? `Dept: ${person.department}` : "",
+    snippet: [person.department && `Dept: ${person.department}`, needsOrgCheck && "Creative leader: confirm they sit in product design"].filter(Boolean).join(". "),
     score,
   };
 }
@@ -77,7 +81,7 @@ export function mapLinkedInResult(r) {
   // The type comes from classifyTitle alone, never from the search result. The
   // model used to pick it, from a list without "Other", so a CFO found on
   // LinkedIn was labeled relevant and slipped past the drop below.
-  const { score, contactType } = classifyTitle(r.title || "");
+  const { score, contactType, needsOrgCheck } = classifyTitle(r.title || "");
   if (contactType === "Other") return null;
 
   return {
@@ -86,7 +90,7 @@ export function mapLinkedInResult(r) {
     title: r.title || "",
     linkedin: r.linkedin || "",
     contact_type: contactType,
-    snippet: r.snippet || "",
+    snippet: [r.snippet, needsOrgCheck && "Creative leader: confirm they sit in product design"].filter(Boolean).join(". "),
     score,
   };
 }

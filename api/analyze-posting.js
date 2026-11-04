@@ -29,10 +29,10 @@ Portfolio value only ever works in Pat's favor. It is a reason to take an underp
 Equity-only, revenue-share, "exposure", or deferred payment is a mismatch AND a red flag.
 
 TIME COMMITMENT (heavy weight)
-Pat works full-time at Verizon. His freelance availability is 5 to 10 hours per week, worked on his own schedule.
-- 10 hours/week or less: strong
-- Above 10 up to 20 hours/week: moderate. This is a stretch above his stated availability, so name the strain in gaps.
-- Above 20 hours/week, "full-time", or "40 hours": mismatch
+Pat works full-time at Verizon. His freelance availability is 10 to 20 hours per week, worked on his own schedule.
+- 20 hours/week or less: strong
+- Above 20 up to 25 hours/week: moderate. This is a stretch above his stated availability, so name the strain in gaps.
+- Above 25 hours/week, "full-time", or "40 hours": mismatch
 Also score as mismatch if the contract requires weekday daytime availability: daily standups, core-hours overlap, on-call rotation, or scheduled meetings during business hours. Async and flexible-schedule work scores strong.
 If hours are not stated, set time_fit to "unstated" and estimate the realistic commitment from the described scope in the summary.
 
@@ -123,7 +123,7 @@ Good: "Strategic scope is real: the role asks Pat to set team standards and part
 Too long: the same point padded with a second clause about mentoring and a third about his current role.
 Put depth, caveats, and reasoning in the summary, which has no length cap.`;
 
-const FULLTIME_SCHEMA = `{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","email_domain":"<domain staff work email uses, or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4 specific, evidence-based>"],"gaps":["<2-4 specific>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}`;
+const FULLTIME_SCHEMA = `{"posting_type":"full-time","fit_score":<0-100>,"company":"<name or empty>","job_title":"<the exact job title as written in the posting, or empty. Never infer or normalize it>","email_domain":"<domain staff work email uses, or empty>","industry":"<industry>","industry_fit":"strong|moderate|mismatch","role_level":"<Senior|Lead|Staff|Principal|Other>","strategic_fit":"strong|moderate|weak","ai_environment":"strong|neutral|flag","environment_signals":"strong|neutral|warning","strengths":["<2-4 specific, evidence-based>"],"gaps":["<2-4 specific>"],"summary":"<4-5 sentences covering all five dimensions and whether Pat should pursue>","search_titles":["<title 1>","<title 2>","<title 3>"]}`;
 
 // The contact search runs on this domain, so a wrong one silently returns
 // nothing. Guessing "<company>.com" missed every .io company and every product
