@@ -1,4 +1,4 @@
-export const PAT_PROFILE = `Pat Lopes is a Senior Product Designer focused on shopping and purchase experiences, with about 10 years designing consumer-facing digital products. His strongest proof is in e-commerce and customer purchase journeys.
+export const PAT_PROFILE = `Pat Lopes is a Senior Product Designer for consumer products, designing the moments where customers decide whether to commit (purchase, checkout, sign-up, plan choice), with more than 10 years designing consumer-facing digital products. His strongest proof is in e-commerce and customer purchase journeys. He is aiming at consumer products in travel, gaming, entertainment, and e-commerce. Those are the direction he is heading, not experience he has.
 
 CORE DIFFERENTIATOR
 Pat's defining strength is taking a clearly defined problem with no prescribed path and owning it end-to-end through to launch. He performs best when given a defined problem to start from, then operates with full autonomy through ambiguity in execution. This is different from most senior designers who execute against briefs other people wrote.
@@ -80,7 +80,8 @@ PORTFOLIO
 patlopes.com, built using AI tools combined with Pat's own front-end skills (HTML, CSS, React). NOT built in Framer.
 
 POSITIONING RULES (important for any messaging on Pat's behalf)
-- Lens is "shopping and purchase experiences, where customers decide whether to commit", not the broader "consumer-facing" and never a telecom label
+- Lens is the moment a customer decides whether to commit (purchase, checkout, sign-up, plan choice). "Shopping and purchase experiences" is too narrow as a headline, and the lens is never a telecom label. E-commerce is the proof, not the boundary.
+- Name travel, gaming, and entertainment as the direction Pat is heading, never as experience. Do not claim work in those industries.
 - Telecom is never the headline. Lead with the problem and the e-commerce proof. Verizon still appears in his history and can be named where it is the strongest or most relevant signal.
 - AI is referenced in process (ideation, exploration), never in outcomes or as a product
 - Tone is conversational, grounded, no buzzwords, no overclaiming
