@@ -139,3 +139,15 @@ export function buildNotionNotes(contact, research) {
   ].filter(Boolean);
   return sections.join("\n\n").slice(0, 2000);
 }
+
+// True when two company names plausibly mean the same employer: "Toast" and
+// "Toast, Inc." match, "Amazon" and "Amazon Web Services" match. Compared on
+// letters and digits only, and either name containing the other is enough.
+// An empty name never matches, so callers decide what "unknown" means.
+export function sameCompany(a, b) {
+  const squash = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const x = squash(a);
+  const y = squash(b);
+  if (!x || !y) return false;
+  return x.includes(y) || y.includes(x);
+}

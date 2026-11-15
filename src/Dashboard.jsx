@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./lib/api";
 import { initContact, diffProfile, isLinkedInProfile, sameAnchor } from "./lib/contact";
+import { findTarget } from "./lib/target-companies";
 import { researchErrorMessage } from "./lib/contacts";
 import { useLinkedInFetch } from "./hooks/useLinkedInFetch";
 import PostingAnalyzer from "./components/PostingAnalyzer";
@@ -44,6 +45,7 @@ export default function Dashboard() {
     company: "", domain: "", searching: false,
     results: [], done: false, error: null, selIdx: null,
     hunterTotal: null,  // emails Hunter has at the searched domain, for the empty state
+    target: "",         // name picked from the target company list, "" when typed by hand
   });
   const [lookup, setLookup] = useState({
     mode: "url", url: "", name: "", company: "",
@@ -149,11 +151,30 @@ export default function Dashboard() {
     startContact();
     patchSearch({
       company: "", domain: "",
+      target: "",
       results: [], done: false, selIdx: null, error: null, hunterTotal: null,
     });
     patchLookup({ url: "", name: "", company: "", status: null, error: null });
     setPitch(null);
     setPitchError(null);
+  }
+
+  // Picking a company from the target list fills both search fields, with the
+  // domain staff really use for email. Results from the previous company are
+  // cleared so they never sit under the new name. Picking the blank option only
+  // un-marks the target and leaves whatever is typed.
+  function handlePickTarget(name) {
+    const target = findTarget(name);
+    if (!target) {
+      patchSearch({ target: "" });
+      return;
+    }
+    patchSearch({
+      company: target.name,
+      domain: target.domain,
+      target: target.name,
+      results: [], done: false, selIdx: null, error: null, hunterTotal: null,
+    });
   }
 
   // The single research entry point. Both the direct look-up in Find people and
@@ -337,13 +358,18 @@ export default function Dashboard() {
         <FindPeople
           step={2}
           done={peopleDone}
-          note={analyzedOrg ? `From ${analyzedOrg}` : undefined}
+          note={
+            search.target
+              ? `Target: ${search.target}`
+              : analyzedOrg ? `From ${analyzedOrg}` : undefined
+          }
           search={search}
           patchSearch={patchSearch}
           lookup={lookup}
           patchLookup={patchLookup}
           searchTitles={analysis?.search_titles}
           onSelectContact={handleSelectContact}
+          onPickTarget={handlePickTarget}
           onLookup={handleLookup}
           fetching={fetching}
           fetchStatus={fetchStatus}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { classifyContact, mapLinkedInResult, mergeContacts } from "../lib/contacts";
+import { TARGET_TIERS } from "../lib/target-companies";
 import Card from "./Card";
 import Field from "./Field";
 import Button from "./Button";
@@ -20,6 +21,7 @@ export default function FindPeople({
   lookup, patchLookup,
   searchTitles,
   onSelectContact,
+  onPickTarget,
   onLookup,
   fetching, fetchStatus,
 }) {
@@ -85,11 +87,29 @@ export default function FindPeople({
 
   return (
     <Card title="Find people" step={step} done={done} note={note}>
+      {/* A shortcut for the companies Pat is aiming at, so a dream company with
+          no posting still gets the right Hunter domain. It only fills the two
+          fields below; typing there by hand still works for anyone else. */}
+      <Field label="Target company">
+        <select
+          value={search.target}
+          onChange={(e) => onPickTarget(e.target.value)}
+        >
+          <option value="">Pick a company, or type one below...</option>
+          {TARGET_TIERS.map(({ tier, companies }) => (
+            <optgroup key={tier} label={tier}>
+              {companies.map((c) => (
+                <option key={c.name} value={c.name}>{c.name}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </Field>
       <div className="grid-2">
         <Field label="Company">
           <input
             value={company}
-            onChange={(e) => patchSearch({ company: e.target.value })}
+            onChange={(e) => patchSearch({ company: e.target.value, target: "" })}
             placeholder="Acme Corp"
           />
         </Field>

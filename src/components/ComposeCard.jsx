@@ -1,5 +1,5 @@
 import { useCopy } from "../hooks/useCopy";
-import { isWarmLead } from "../lib/contact";
+import { isWarmLead, sameCompany } from "../lib/contact";
 import Card from "./Card";
 import Field from "./Field";
 import Button from "./Button";
@@ -52,16 +52,21 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     `- ${contact.connection.trim()}`,
   ];
 
-  // The ask changes what the message is for. Only a referral for this role is
-  // about the posting, so every other ask drops the posting sections below:
-  // a chat about the future or a reconnect that quotes a job description reads
-  // like an application in disguise.
+  // Whether the posting belongs in this message. An explicit ask settles it:
+  // only a referral for this role is about the posting, and a chat about the
+  // future or a reconnect that quotes a job description reads like an
+  // application in disguise. With no ask, the posting is in unless it is clearly
+  // about a different employer, which is what happens when a target company is
+  // picked while an older posting is still loaded.
   const ask = isWarmLead(contact) ? contact.ask : "";
   const askSection = ask && [
     "## What I'm asking for",
     `- ${ask}`,
   ];
-  const aboutPosting = !ask || ask === "Referral for this role";
+  const postingOrg = analysis?.posting_type === "freelance" ? analysis.client : analysis?.company;
+  const aboutPosting = ask
+    ? ask === "Referral for this role"
+    : !postingOrg || !contact.company?.trim() || sameCompany(contact.company, postingOrg);
 
   // Only the strengths go in, framed as angles. The summary, gaps, red flags, and
   // score are Pat's private verdict on whether to pursue, and handing that to the
@@ -104,7 +109,7 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     "## How to write it",
     "- Run my skills in order: humanizer, then outreach-composer, then stop-slop. Open the skill files each time.",
     `- Use the ${suggestTemplate(contact)} reference template. This is the first message only, so no follow-up language.`,
-    ask && ask !== "Referral for this role" &&
+    analysis && !aboutPosting &&
       "- There is no open role in this message. Do not mention a posting or apply for anything. Make one small, easy ask that matches what I wrote above.",
     analysis?.posting_type !== "freelance" && analysis?.job_title && aboutPosting &&
       `- Use the exact title "${analysis.job_title}" and nothing else. Check it against the posting before using it.`,
