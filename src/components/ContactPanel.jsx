@@ -45,6 +45,7 @@ export default function ContactPanel({
 }) {
   const [pushing, setPushing] = useState(false);
   const [researching, setResearching] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   // Both of these report on an action taken against the person currently in the
   // card, so both are tagged with that person and expire by derivation the moment
   // Dashboard swaps the record. A "Contact pushed to Notion" banner left over
@@ -147,18 +148,30 @@ export default function ContactPanel({
     }
   }
 
+  // The rarely edited fields stay folded away unless something in them needs
+  // attention: a profile fetch in flight or failed, or research disagreeing with
+  // the location. Hiding a field that is asking a question would bury it.
+  const showDetails =
+    showMore ||
+    fetching ||
+    fetchStatus === "error" ||
+    Boolean(conflicts.location && !dismissedFields.includes("location"));
+
   const fetchBadge = fetching ? (
     <Badge variant="amber">Fetching...</Badge>
   ) : fetchStatus === "ok" ? (
     <Badge variant="green">Profile loaded</Badge>
   ) : fetchStatus === "error" ? (
-    <Badge variant="red">Could not load -- fill in manually</Badge>
+    <Badge variant="red">Could not load</Badge>
   ) : null;
 
   return (
     <Card title="Contact" step={step} done={done} note={note}>
+      {/* Essentials first: who they are, how to reach them, and where the
+          relationship stands. Most of this arrives filled in, so the fields that
+          are rarely touched sit behind "More details" below. */}
       <div className="grid-2">
-        <Field label="Contact name *">
+        <Field label="Name">
           <input
             value={contact.name}
             onChange={(e) =>
@@ -168,18 +181,6 @@ export default function ContactPanel({
           />
           {suggestionFor("name")}
         </Field>
-        <Field label="Company *">
-          <input
-            value={contact.company}
-            onChange={(e) =>
-              setContact((c) => ({ ...c, company: e.target.value }))
-            }
-            placeholder="Acme Corp"
-          />
-          {suggestionFor("company")}
-        </Field>
-      </div>
-      <div className="grid-2">
         <Field label="Title">
           <input
             value={contact.title}
@@ -190,19 +191,19 @@ export default function ContactPanel({
           />
           {suggestionFor("title")}
         </Field>
-        <Field label="Location">
-          <input
-            value={contact.location}
-            onChange={(e) =>
-              setContact((c) => ({ ...c, location: e.target.value }))
-            }
-            placeholder="New York, NY"
-          />
-          {suggestionFor("location")}
-        </Field>
       </div>
       <div className="grid-2">
-        <Field label="Email (from Hunter.io)">
+        <Field label="Company">
+          <input
+            value={contact.company}
+            onChange={(e) =>
+              setContact((c) => ({ ...c, company: e.target.value }))
+            }
+            placeholder="Acme Corp"
+          />
+          {suggestionFor("company")}
+        </Field>
+        <Field label="Email">
           <input
             value={contact.email}
             onChange={(e) =>
@@ -211,44 +212,8 @@ export default function ContactPanel({
             placeholder="name@company.com"
           />
         </Field>
-        <Field
-          label="LinkedIn URL -- paste and press Enter to auto-fill"
-          badge={fetchBadge}
-        >
-          <input
-            value={contact.linkedin}
-            onChange={(e) => {
-              setContact((c) => ({ ...c, linkedin: e.target.value }));
-              if (!e.target.value) setFetchStatus(null);
-            }}
-            onBlur={(e) => onFetchLinkedIn(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onFetchLinkedIn(contact.linkedin);
-              }
-            }}
-            placeholder="https://linkedin.com/in/..."
-          />
-        </Field>
       </div>
-      <div className="grid-3">
-        <Field label="Contact type">
-          <select
-            value={contact.contactType}
-            onChange={(e) =>
-              setContact((c) => ({ ...c, contactType: e.target.value }))
-            }
-          >
-            <option value="">Select...</option>
-            <option>Hiring Manager</option>
-            <option>Boss Hunt</option>
-            <option>Recruiter</option>
-            <option>Referral</option>
-            <option>Informational</option>
-            <option>Freelance/Client</option>
-          </select>
-        </Field>
+      <div className="grid-2">
         <Field label="Lead type">
           <select
             value={contact.leadType}
@@ -279,37 +244,96 @@ export default function ContactPanel({
       </div>
 
       {isWarmLead(contact) && (
-        <Field label="How you know them">
-          <input
+        <div className="grid-2">
+          <Field label="How you know them">
+            <input
             value={contact.connection}
             onChange={(e) =>
               setContact((c) => ({ ...c, connection: e.target.value }))
             }
             placeholder="Worked together on the Verizon Value portfolio"
           />
-        </Field>
+          </Field>
+          <Field label="What you're asking for">
+            <select
+              value={contact.ask}
+              onChange={(e) =>
+                setContact((c) => ({ ...c, ask: e.target.value }))
+              }
+            >
+              <option value="">Select...</option>
+              {ASK_OPTIONS.map((option) => (
+                <option key={option}>{option}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
       )}
-      {isWarmLead(contact) && (
-        <Field label="What you're asking for">
-          <select
-            value={contact.ask}
-            onChange={(e) =>
-              setContact((c) => ({ ...c, ask: e.target.value }))
-            }
-          >
-            <option value="">Select...</option>
-            {ASK_OPTIONS.map((option) => (
-              <option key={option}>{option}</option>
-            ))}
-          </select>
-        </Field>
+
+      <button
+        type="button"
+        className="link-button"
+        onClick={() => setShowMore((open) => !open)}
+        aria-expanded={showDetails}
+      >
+        {showDetails ? "Fewer details" : "More details: location, LinkedIn, contact type"}
+      </button>
+
+      {showDetails && (
+        <>
+          <Field label="LinkedIn URL" badge={fetchBadge}>
+            <input
+              value={contact.linkedin}
+              onChange={(e) => {
+                setContact((c) => ({ ...c, linkedin: e.target.value }));
+                if (!e.target.value) setFetchStatus(null);
+              }}
+              onBlur={(e) => onFetchLinkedIn(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onFetchLinkedIn(contact.linkedin);
+                }
+              }}
+              placeholder="Paste and press Enter to auto-fill"
+            />
+          </Field>
+          <div className="grid-2">
+            <Field label="Location">
+              <input
+              value={contact.location}
+              onChange={(e) =>
+                setContact((c) => ({ ...c, location: e.target.value }))
+              }
+              placeholder="New York, NY"
+            />
+              {suggestionFor("location")}
+            </Field>
+            <Field label="Contact type">
+              <select
+                value={contact.contactType}
+                onChange={(e) =>
+                  setContact((c) => ({ ...c, contactType: e.target.value }))
+                }
+              >
+                <option value="">Select...</option>
+                <option>Hiring Manager</option>
+                <option>Boss Hunt</option>
+                <option>Recruiter</option>
+                <option>Referral</option>
+                <option>Informational</option>
+                <option>Freelance/Client</option>
+              </select>
+            </Field>
+          </div>
+        </>
       )}
 
       <div className="divider" />
 
       <div className="btn-row">
         <Button
-          variant="blue"
+          variant="default"
           onClick={handleResearch}
           disabled={
             researching || (!contact.linkedin.trim() && !contact.name.trim())
@@ -318,7 +342,7 @@ export default function ContactPanel({
           {researching ? "Researching..." : "Research this person"}
         </Button>
         <Button
-          variant="green"
+          variant="primary"
           onClick={handlePushNotion}
           disabled={pushing || !contact.name.trim() || !contact.company.trim()}
         >

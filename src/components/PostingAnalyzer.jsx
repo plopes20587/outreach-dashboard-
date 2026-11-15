@@ -47,7 +47,7 @@ const TERM_LABEL = {
 // detected type drives the layout, so the type badge leads the result head next
 // to the score: it must be obvious which rubric produced the numbers.
 export default function PostingAnalyzer({
-  posting, setPosting, analysis, analyzing, analyzeError, onAnalyze, onClear,
+  posting, setPosting, analysis, analyzing, analyzeError, onAnalyze,
   step, done,
 }) {
   const isFreelance = analysis?.posting_type === "freelance";
@@ -60,7 +60,7 @@ export default function PostingAnalyzer({
             used, so it gives its height back to the result. Still editable and
             scrollable, so re-analyzing and the type override work off it. */}
         <textarea
-          rows={analysis ? 4 : 9}
+          rows={analysis ? 3 : 9}
           value={posting}
           onChange={(e) => setPosting(e.target.value)}
           placeholder="Paste a job description or freelance contract. The type is detected automatically."
@@ -68,16 +68,11 @@ export default function PostingAnalyzer({
       </Field>
       <div className="btn-row">
         <Button
-          variant="blue"
+          variant="primary"
           onClick={() => onAnalyze()}
           disabled={analyzing || !posting.trim()}
         >
-          {analyzing ? "Analyzing..." : "Analyze"}
-        </Button>
-        {/* Clears the whole workspace, not just this textarea, so the label
-            says so. It is the only control in the app that throws work away. */}
-        <Button variant="default" onClick={onClear}>
-          Start over
+          {analyzing ? "Analyzing..." : analysis ? "Analyze again" : "Analyze"}
         </Button>
       </div>
 
@@ -93,7 +88,7 @@ export default function PostingAnalyzer({
               how every number below it should be read, so separating them made
               the reader hold two facts that belong together. */}
           <div className="result-head">
-            <Badge variant={isFreelance ? "coral" : "blue"}>
+            <Badge variant="neutral">
               {isFreelance ? "Freelance contract" : "Job posting"}
             </Badge>
             <FitBar score={analysis.fit_score} />
@@ -114,13 +109,13 @@ export default function PostingAnalyzer({
           {isFreelance ? (
             <div className="tags-row">
               <Badge variant={TERM_BADGE[analysis.rate_fit] || "neutral"}>
-                {analysis.rate} -- {TERM_LABEL[analysis.rate_fit] || analysis.rate_fit}
+                {analysis.rate}: {TERM_LABEL[analysis.rate_fit] || analysis.rate_fit}
               </Badge>
               <Badge variant={TERM_BADGE[analysis.time_fit] || "neutral"}>
-                {analysis.hours} -- {TERM_LABEL[analysis.time_fit] || analysis.time_fit}
+                {analysis.hours}: {TERM_LABEL[analysis.time_fit] || analysis.time_fit}
               </Badge>
               <Badge variant={TERM_BADGE[analysis.scope_fit] || "neutral"}>
-                Scope -- {TERM_LABEL[analysis.scope_fit] || analysis.scope_fit}
+                Scope: {TERM_LABEL[analysis.scope_fit] || analysis.scope_fit}
               </Badge>
               {/* Which service tier to quote from. Neutral on purpose: it names
                   the package the work maps to, it does not judge the fit. */}
@@ -132,9 +127,9 @@ export default function PostingAnalyzer({
           ) : (
             <div className="tags-row">
               <Badge variant={INDUSTRY_BADGE[analysis.industry_fit] || "neutral"}>
-                {analysis.industry} -- {INDUSTRY_LABEL[analysis.industry_fit] || analysis.industry_fit}
+                {analysis.industry}: {INDUSTRY_LABEL[analysis.industry_fit] || analysis.industry_fit}
               </Badge>
-              {analysis.role_level && <Badge variant="blue">{analysis.role_level}</Badge>}
+              {analysis.role_level && <Badge variant="neutral">{analysis.role_level}</Badge>}
               {STRATEGIC_LABEL[analysis.strategic_fit] && (
                 <Badge variant={STRATEGIC_BADGE[analysis.strategic_fit]}>
                   {STRATEGIC_LABEL[analysis.strategic_fit]}

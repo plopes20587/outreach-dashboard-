@@ -44,7 +44,7 @@ export default function ContactCard({ contact, selected, onSelect }) {
           <span className="badge badge-neutral">{contact.contact_type}</span>
         )}
         {selected && (
-          <span className="badge badge-blue">Selected</span>
+          <span className="badge badge-primary">Selected</span>
         )}
       </div>
     </div>

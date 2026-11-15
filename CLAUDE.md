@@ -143,6 +143,8 @@ Document these in `.env.example`. Pat sets them in the Vercel dashboard, not in 
 
 ### Color tokens (CSS variables in `styles.css`)
 
+> Superseded Nov 2026. The values below are the original palette, kept for history. The live tokens follow the Pat Lopes Portfolio design system: see `src/styles.css` and Hard Rule 5.
+
 Use the dark palette throughout. No light mode — single forced dark theme.
 
 ```css
@@ -952,7 +954,7 @@ These are NOT suggestions. The agent must follow them strictly.
 2. **The contact name format is `First Last` with a single space.** Not `First_Last`. Not `firstName.lastName`. Just first space last.
 3. **API keys never appear in client code.** Not in `src/`, not in `index.html`, not in any committed file. Always backend-only.
 4. **No localStorage in the artifact's React tree** for sensitive data. The Hunter proxy URL session storage from the previous artifact version is no longer needed since calls go to same-origin `/api/*`.
-5. **Visual fidelity matters.** This is a designer's tool. Match the dark palette and spacing exactly. Don't introduce new colors, new spacings, or different border styles.
+5. **Visual fidelity matters, and the source is the Pat Lopes Portfolio design system** (the Design System artifact saved in Claude, applied Nov 2026). `src/styles.css` is the source of truth for token values and supersedes the older palette listed under Visual Design above. Surfaces: black page, `#0a0a0f` cards, `#18151f` inputs. Brand: royal purple `--primary` `#7f5af0` for action and identity (hover `--primary-dark`), cyan `--link` for links only. Type: Staatliches (`--font-display`, weight 400 only) for the page title, card titles, and the fit score; Inter (`--font-ui`, 14px body) for everything else. Radius 16px on cards, 8px on buttons. There are two button variants and no others: one solid purple `primary` per card and the quiet `default`. Green, amber, and red are status only (good, caution, problem) and are the app's own, since the portfolio system has no status colors. Do not add other hues.
 6. **Single-file components stay single-file.** Don't split a 50-line component into 4 files. The file structure above is the limit of how granular this should get.
 7. **Model choice is per-endpoint and deliberate.** Don't swap a model without a reason recorded here.
 
@@ -969,7 +971,7 @@ These are NOT suggestions. The agent must follow them strictly.
 8. **Notion field names are case-sensitive.** They are: `Contact Name`, `Company`, `Title`, `Location`, `Email`, `Linkedin` (lowercase k), `Contact Type`, `Lead Type`, `Notes`, `Status`, `Email Sent`, `Follow up date`. Do not change these.
 9. **Do NOT build LLM-powered outreach generation in the Outreach flow.** No `/api/draft-outreach` endpoint. The Draft outreach button is a pure clipboard copy of a structured prompt (now enriched with fit summary, research notes/hook, and a suggested template). Outreach writing happens in Claude.ai where Pat's skills and reference templates live. The `/api/research-person` endpoint is allowed because it only researches a person; it does not write outreach. See the Architecture Overview at the top of this doc.
 10. **Generate pitch (in the Compose card) IS the exception** to rule 9. Pitches are generated end-to-end via `/api/generate-pitch` because the tone rules are self-contained and don't need the outreach-composer skill. Draft outreach, sitting right next to it in the same card, is still a pure clipboard copy.
-11. **All four cards are always visible, in a fixed two-column workspace:** left column Analyze a posting alone, right column Find people then Contact then Compose. Do not add tabs, collapse cards, or conditionally hide a card. Cards render their empty state when unused. Below the 1000px breakpoint the columns unwrap to a single column in the order Analyze, Find people, Contact, Compose.
+11. **All four cards are always visible: work on the left, result on the right** (Nov 2026 redesign, replaces the earlier "Analyze alone on the left" layout). The left column is the three steps in order: Analyze a posting, Find people, Contact. The right column is a sticky rail (`.workspace-rail`) holding Compose, so the output stays on screen while the left column scrolls. Compose opens with two option rows (`.compose-options`: Outreach message and Freelance pitch), each naming what it will be made from or what it still needs, with its button on the row. That is also its empty state, so there is no separate helper line. Do not add tabs or hide a card. Two things fold to keep the left column short, and both are local component state: Find people shows only the selected person after a pick ("Show all N people" reopens the list), and the Contact card keeps Location, LinkedIn URL, and Contact type behind "More details" (auto-opened while a LinkedIn fetch is running or failed, or research disputes the location). `Start over` lives in the page header and only renders when there is work to clear. Below 1000px the rail unpins and the order is Analyze, Find people, Contact, Compose.
 12. **Spacing is tokenized and owned by `Card`.** No component sets `marginTop`/`marginBottom` inline. Vertical rhythm comes from `.card-body`'s gap; use a `.divider` when a section needs a harder break. Same rule for the rest: prefer a class in `styles.css` over an inline `style` object.
 
 ---

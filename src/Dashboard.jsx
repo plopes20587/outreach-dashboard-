@@ -338,7 +338,24 @@ export default function Dashboard() {
 
   const analyzedOrg = analysis?.posting_type === "freelance" ? analysis?.client : analysis?.company;
 
+  // Anything worth throwing away. Start over is hidden until there is, so the
+  // one destructive control never sits on an empty page asking to be clicked.
+  const hasWork = Boolean(
+    posting.trim() || analysis || contact.name.trim() || search.done || outreachPrompt || pitch,
+  );
+
   return (
+    <div className="app-wrapper">
+      <header className="app-header">
+        <h1 className="app-title">Outreach</h1>
+        <span className="app-tagline">Posting, person, message.</span>
+        {hasWork && (
+          <button type="button" className="link-button app-reset" onClick={handleClearPosting}>
+            Start over
+          </button>
+        )}
+      </header>
+
     <div className="workspace">
       <div className="workspace-col">
         <PostingAnalyzer
@@ -348,13 +365,10 @@ export default function Dashboard() {
           analyzing={analyzing}
           analyzeError={analyzeError}
           onAnalyze={handleAnalyze}
-          onClear={handleClearPosting}
           step={1}
           done={postingDone}
         />
-      </div>
 
-      <div className="workspace-col">
         <FindPeople
           step={2}
           done={peopleDone}
@@ -390,7 +404,11 @@ export default function Dashboard() {
           onAcceptSuggestion={acceptSuggestion}
           personId={contactAnchor}
         />
+      </div>
 
+      {/* The rail. It holds the thing the whole flow exists to produce, so it
+          stays on screen while the working column beside it scrolls. */}
+      <aside className="workspace-rail">
         <ComposeCard
           step={4}
           done={composeDone}
@@ -406,7 +424,8 @@ export default function Dashboard() {
           pitchError={pitchError}
           onGeneratePitch={handleGeneratePitch}
         />
-      </div>
+      </aside>
+    </div>
     </div>
   );
 }

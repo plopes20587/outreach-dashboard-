@@ -26,6 +26,10 @@ export default function FindPeople({
   fetching, fetchStatus,
 }) {
   const [linkedinLoading, setLinkedinLoading] = useState(false);
+  // Once someone is picked, the people who were not picked are finished
+  // business, so the list folds down to the selection. This is local because
+  // nothing outside the card cares whether the rest are on screen.
+  const [showAll, setShowAll] = useState(false);
 
   const { company, domain, searching, results, done: searchDone, error: searchError, selIdx, hunterTotal } = search;
   const isUrlMode = lookup.mode === "url";
@@ -113,7 +117,7 @@ export default function FindPeople({
             placeholder="Acme Corp"
           />
         </Field>
-        <Field label="Company domain (for Hunter.io)">
+        <Field label="Email domain">
           <input
             value={domain}
             onChange={(e) => patchSearch({ domain: e.target.value })}
@@ -124,7 +128,7 @@ export default function FindPeople({
 
       <div className="btn-row">
         <Button
-          variant="green"
+          variant="primary"
           onClick={handleSearch}
           disabled={searching || (!domain.trim() && !company.trim())}
         >
@@ -138,21 +142,37 @@ export default function FindPeople({
         <>
           <div className="divider" />
           <div className="results-header">
-            {results.length} contact(s) found -- select one to fill in the Contact card
+            {selIdx != null && !showAll
+              ? "Loaded into Contact."
+              : `${results.length} ${results.length === 1 ? "person" : "people"} found. Pick one to load them into Contact.`}
           </div>
           {linkedinLoading && (
             <div className="results-header muted">Also checking LinkedIn...</div>
           )}
           <div className="results-list">
-            {results.map((r, i) => (
-              <ContactCard
-                key={i}
-                contact={r}
-                selected={selIdx === i}
-                onSelect={() => onSelectContact(i)}
-              />
-            ))}
+            {results.map((r, i) =>
+              selIdx != null && !showAll && selIdx !== i ? null : (
+                <ContactCard
+                  key={i}
+                  contact={r}
+                  selected={selIdx === i}
+                  onSelect={() => {
+                    setShowAll(false);
+                    onSelectContact(i);
+                  }}
+                />
+              ),
+            )}
           </div>
+          {selIdx != null && results.length > 1 && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => setShowAll((open) => !open)}
+            >
+              {showAll ? "Show only the selected person" : `Show all ${results.length} people`}
+            </button>
+          )}
         </>
       )}
 
@@ -176,18 +196,18 @@ export default function FindPeople({
           One input covers both of the old cards' URL fields -- a LinkedIn
           profile goes to the cheap field extraction, anything else goes to the
           research endpoint that can actually read a Product Hunt or company page. */}
-      <div className="section-label">Or add someone directly</div>
+      <div className="section-label">Already know who? Add them directly</div>
 
       {isUrlMode ? (
-        <Field label="LinkedIn, Product Hunt, Crunchbase, or company URL">
+        <Field label="Profile or company URL">
           <div className="input-with-button">
             <input
               value={lookup.url}
               onChange={(e) => patchLookup({ url: e.target.value })}
               onKeyDown={(e) => { if (e.key === "Enter" && !lookupDisabled) onLookup(); }}
-              placeholder="https://linkedin.com/in/... or https://producthunt.com/@..."
+              placeholder="LinkedIn, Product Hunt, Crunchbase, or a company page"
             />
-            <Button variant="green" onClick={onLookup} disabled={lookupDisabled}>
+            <Button variant="default" onClick={onLookup} disabled={lookupDisabled}>
               {lookupBusy ? "Looking up..." : "Look up"}
             </Button>
           </div>
@@ -211,7 +231,7 @@ export default function FindPeople({
             </Field>
           </div>
           <div className="btn-row">
-            <Button variant="green" onClick={onLookup} disabled={lookupDisabled}>
+            <Button variant="default" onClick={onLookup} disabled={lookupDisabled}>
               {lookupBusy ? "Looking up..." : "Look up"}
             </Button>
           </div>

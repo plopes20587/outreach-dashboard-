@@ -8,7 +8,7 @@ export default function PromptBox({ text }) {
     <div className="prompt-box">
       <div className="prompt-box-header">
         <span className="prompt-box-label">Paste into Claude</span>
-        <Button variant="purple" onClick={() => copy(text)}>
+        <Button variant="primary" onClick={() => copy(text)}>
           {copied ? "Copied!" : "Copy prompt"}
         </Button>
       </div>
@@ -16,7 +16,7 @@ export default function PromptBox({ text }) {
         className="prompt-textarea"
         value={text}
         readOnly
-        rows={5}
+        rows={14}
         onClick={(e) => e.target.select()}
       />
     </div>

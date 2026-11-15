@@ -16,6 +16,23 @@ function suggestTemplate(contact) {
   return "Cold Outreach Strategy";
 }
 
+// Whether the posting belongs in a message to this contact. An explicit ask
+// settles it: only a referral for this role is about the posting, and a chat
+// about the future or a reconnect that quotes a job description reads like an
+// application in disguise. With no ask, the posting is in unless it is clearly
+// about a different employer, which is what happens when a target company is
+// picked while an older posting is still loaded.
+//
+// Shared by the prompt builder and the brief at the top of the card, so what the
+// card says will be sent and what is sent cannot disagree.
+function postingApplies(contact, analysis) {
+  if (!analysis) return false;
+  const ask = isWarmLead(contact) ? contact.ask : "";
+  if (ask) return ask === "Referral for this role";
+  const org = analysis.posting_type === "freelance" ? analysis.client : analysis.company;
+  return !org || !contact.company?.trim() || sameCompany(contact.company, org);
+}
+
 // Builds the structured prompt Pat copies into his Claude.ai project, where the
 // outreach-composer skill and reference templates actually write the message.
 // This app intentionally does NOT generate outreach itself (CLAUDE.md Hard Rule
@@ -52,21 +69,13 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     `- ${contact.connection.trim()}`,
   ];
 
-  // Whether the posting belongs in this message. An explicit ask settles it:
-  // only a referral for this role is about the posting, and a chat about the
-  // future or a reconnect that quotes a job description reads like an
-  // application in disguise. With no ask, the posting is in unless it is clearly
-  // about a different employer, which is what happens when a target company is
-  // picked while an older posting is still loaded.
+  // The ask changes what the message is for, so it gets its own section.
   const ask = isWarmLead(contact) ? contact.ask : "";
   const askSection = ask && [
     "## What I'm asking for",
     `- ${ask}`,
   ];
-  const postingOrg = analysis?.posting_type === "freelance" ? analysis.client : analysis?.company;
-  const aboutPosting = ask
-    ? ask === "Referral for this role"
-    : !postingOrg || !contact.company?.trim() || sameCompany(contact.company, postingOrg);
+  const aboutPosting = postingApplies(contact, analysis);
 
   // Only the strengths go in, framed as angles. The summary, gaps, red flags, and
   // score are Pat's private verdict on whether to pursue, and handing that to the
@@ -151,34 +160,76 @@ export default function ComposeCard({
   const outreachPrimary = hasContact;
   const pitchPrimary = hasPosting && !hasContact;
 
-  const helper =
-    hasContact && hasPosting
-      ? "Draft outreach to reach this person directly, or generate a pitch to apply to the posting."
-      : hasContact
-        ? "Copies a prompt for your Claude project to write the message."
-        : hasPosting
-          ? "Writes a pitch you can paste straight into the posting."
-          : "Add a contact or analyze a posting to compose.";
+  // What each option will be made from, read straight off the other three cards.
+  // It is the reason this card can sit apart from them: it shows what Compose
+  // will work from without scrolling back to check.
+  const org = analysis?.posting_type === "freelance" ? analysis?.client : analysis?.company;
+  const role = analysis?.posting_type === "freelance" ? analysis?.project_type : analysis?.job_title;
+  const postingLine = [role, org].filter(Boolean).join(" at ") || "Posting analyzed";
+  const postingLeftOut = hasContact && hasPosting && !postingApplies(contact, analysis);
 
   return (
     <Card title="Compose" step={step} done={done}>
-      <div className="btn-row">
-        <Button
-          variant={outreachPrimary ? "purple" : "default"}
-          onClick={() => setOutreachPrompt(buildOutreachPrompt(contact, analysis, research, analyzedPosting))}
-        >
-          Draft outreach
-        </Button>
-        <Button
-          variant={pitchPrimary ? "coral" : "default"}
-          onClick={onGeneratePitch}
-          disabled={generating}
-        >
-          {generating ? "Generating..." : "Generate pitch"}
-        </Button>
-      </div>
+      {/* The two things this card can make, each stated as an offer: what it
+          is, what it will be made from, and the button that makes it. An empty
+          card therefore reads as a menu with its requirements, and a full one as
+          a brief of exactly what each button is about to use. */}
+      <div className="compose-options">
+        <div className="compose-option">
+          <div className="compose-option-text">
+            <span className="compose-option-name">Outreach message</span>
+            {hasContact ? (
+              <>
+                <span className="compose-option-source">
+                  To {[contact.name, contact.title].filter(Boolean).join(", ")}
+                  {contact.company ? ` at ${contact.company}` : ""}
+                </span>
+                {hasPosting && (
+                  <span className="compose-option-note">
+                    {postingLeftOut
+                      ? "The posting is left out: it is not about this contact."
+                      : `About ${postingLine}`}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="compose-option-note">
+                Needs a person. Find one in step 2 or type them into Contact.
+                Copies a prompt for your Claude project to write.
+              </span>
+            )}
+          </div>
+          <Button
+            variant={outreachPrimary ? "primary" : "default"}
+            onClick={() => setOutreachPrompt(buildOutreachPrompt(contact, analysis, research, analyzedPosting))}
+          >
+            Draft outreach
+          </Button>
+        </div>
 
-      <div className="hint">{helper}</div>
+        <div className="compose-option">
+          <div className="compose-option-text">
+            <span className="compose-option-name">Freelance pitch</span>
+            {posting.trim() ? (
+              <span className="compose-option-source">
+                {hasPosting ? `For ${postingLine}` : "From the posting in step 1"}
+              </span>
+            ) : (
+              <span className="compose-option-note">
+                Needs a posting. Paste one in step 1.
+                Written here, ready to paste into the application.
+              </span>
+            )}
+          </div>
+          <Button
+            variant={pitchPrimary ? "primary" : "default"}
+            onClick={onGeneratePitch}
+            disabled={generating}
+          >
+            {generating ? "Generating..." : "Generate pitch"}
+          </Button>
+        </div>
+      </div>
 
       {pitchError && <div className="notice notice-error">{pitchError}</div>}
 
@@ -190,7 +241,7 @@ export default function ComposeCard({
 
           <div className="prompt-box-header">
             <span className="hint">Ready to copy into your proposal</span>
-            <Button variant="coral" onClick={() => copy(pitch.message)}>
+            <Button variant="primary" onClick={() => copy(pitch.message)}>
               {copied ? "Copied!" : "Copy"}
             </Button>
           </div>
@@ -210,7 +261,7 @@ export default function ComposeCard({
           </Field>
 
           <div className="btn-row">
-            <Button variant="coral" onClick={onGeneratePitch} disabled={generating || !posting.trim()}>
+            <Button variant="default" onClick={onGeneratePitch} disabled={generating || !posting.trim()}>
               {generating ? "Generating..." : "Regenerate"}
             </Button>
           </div>
