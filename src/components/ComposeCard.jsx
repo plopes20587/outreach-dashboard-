@@ -1,4 +1,5 @@
 import { useCopy } from "../hooks/useCopy";
+import { isWarmLead } from "../lib/contact";
 import Card from "./Card";
 import Field from "./Field";
 import Button from "./Button";
@@ -9,7 +10,7 @@ import PromptBox from "./PromptBox";
 function suggestTemplate(contact) {
   if (contact.contactType === "Boss Hunt")     return "Boss Hunting Playbook";
   if (contact.contactType === "Informational") return "Informational Interview";
-  if (contact.leadType === "Warm" || contact.leadType === "Warm-ish") {
+  if (isWarmLead(contact)) {
     return "Warm Outreach Strategy";
   }
   return "Cold Outreach Strategy";
@@ -43,11 +44,30 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
       : "- Channel: LinkedIn message, so keep it short",
   ];
 
+  // The relationship is the one thing a warm message has that a cold one does
+  // not, so it gets its own section, in Pat's words. Dropped for Cold leads and
+  // when left blank, so a stray value never turns a cold message into a warm one.
+  const connectionSection = isWarmLead(contact) && contact.connection?.trim() && [
+    "## How I know them",
+    `- ${contact.connection.trim()}`,
+  ];
+
+  // The ask changes what the message is for. Only a referral for this role is
+  // about the posting, so every other ask drops the posting sections below:
+  // a chat about the future or a reconnect that quotes a job description reads
+  // like an application in disguise.
+  const ask = isWarmLead(contact) ? contact.ask : "";
+  const askSection = ask && [
+    "## What I'm asking for",
+    `- ${ask}`,
+  ];
+  const aboutPosting = !ask || ask === "Referral for this role";
+
   // Only the strengths go in, framed as angles. The summary, gaps, red flags, and
   // score are Pat's private verdict on whether to pursue, and handing that to the
   // writer made messages generic and hedged. The posting text itself (below) is
   // what gives the message something specific to say.
-  const reasonSection = analysis && [
+  const reasonSection = analysis && aboutPosting && [
     "## Why I'm reaching out",
     analysis.posting_type === "freelance"
       ? `- The ${analysis.client ? `${analysis.client} ` : ""}${analysis.project_type || "freelance"} contract in the posting below`
@@ -71,7 +91,7 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
 
   // The posting sits just before the instructions: Claude handles a long document
   // best when the instructions come after it.
-  const postingSection = analysis && postingText?.trim() && [
+  const postingSection = analysis && aboutPosting && postingText?.trim() && [
     "## The posting",
     "<posting>",
     postingText.trim(),
@@ -84,7 +104,9 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     "## How to write it",
     "- Run my skills in order: humanizer, then outreach-composer, then stop-slop. Open the skill files each time.",
     `- Use the ${suggestTemplate(contact)} reference template. This is the first message only, so no follow-up language.`,
-    analysis?.posting_type !== "freelance" && analysis?.job_title &&
+    ask && ask !== "Referral for this role" &&
+      "- There is no open role in this message. Do not mention a posting or apply for anything. Make one small, easy ask that matches what I wrote above.",
+    analysis?.posting_type !== "freelance" && analysis?.job_title && aboutPosting &&
       `- Use the exact title "${analysis.job_title}" and nothing else. Check it against the posting before using it.`,
     "- Plain subject line for an email, written the way a person would say it. Target about 85 words: one hook, one proof point with a number, one small question the posting does not already answer, my portfolio link, a graceful exit.",
     "- Open with who I am and what I want in plain words. Never open by quoting or paraphrasing the posting or something they wrote and then drawing a conclusion from it.",
@@ -92,11 +114,13 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     "- Only claim what I can defend in a live conversation. If any detail about my background is unclear, ask me before drafting.",
     "- Shape it for this person and contact type. Do not reuse the same opener or structure as my other drafts.",
     "- Be specific: one concrete detail from the posting or the hook, and the overlap with one piece of my work. No generic praise, no performed admiration.",
+    isWarmLead(contact) && contact.connection?.trim() &&
+      "- This person already knows me. Open from how we know each other, in the same words I used above. Do not invent shared history, details, or a recent conversation beyond what I wrote.",
     "- Source priority: the contact fields, then the posting, then the research. The posting is first-party and current; the research may be out of date.",
     "- Never hedge. If you are not sure a detail is still current, leave it out rather than qualifying it.",
   ];
 
-  return [[opener], contactSection, reasonSection, researchSection, postingSection, instructionSection]
+  return [[opener], contactSection, connectionSection, askSection, reasonSection, researchSection, postingSection, instructionSection]
     .filter(Boolean)
     .map((section) => section.filter(Boolean).join("\n"))
     .join("\n\n");

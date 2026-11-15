@@ -4,8 +4,16 @@ export function initContact() {
   return {
     name: "", company: "", title: "", location: "",
     email: "", linkedin: "", contactType: "", leadType: "",
+    connection: "", ask: "",
     status: "Did not send",
   };
+}
+
+// Warm and Warm-ish both mean there is a real relationship to write from. The
+// connection field, its prompt section, and its Notion note all key off this one
+// check so they cannot disagree about when a lead counts as warm.
+export function isWarmLead(contact) {
+  return contact?.leadType === "Warm" || contact?.leadType === "Warm-ish";
 }
 
 // Merges the profile fields returned by fetch-linkedin / research-person into an
@@ -102,6 +110,32 @@ export function buildResearchNotes(research) {
     research.research_notes,
     research.company_context && `Company: ${research.company_context}`,
     research.hook && `Hook: ${research.hook}`,
+  ].filter(Boolean);
+  return sections.join("\n\n").slice(0, 2000);
+}
+
+// What Pat is asking a warm contact for. The labels are what the select shows and
+// what the prompt and the Notion note repeat, so there is one list to edit.
+export const ASK_OPTIONS = [
+  "Referral for this role",
+  "Referral for future roles",
+  "Informational chat",
+  "Reconnect",
+];
+
+// The value for Notion's Notes property: how Pat knows the person and what he is
+// asking for (warm leads only), then the research. The connection leads because it is the part of the
+// note that still matters months later, and it is capped on its own so a long
+// research block can never push it past Notion's 2000 character limit.
+// Returns "" when there is nothing to write, which makes the serverless
+// function omit the property.
+export function buildNotionNotes(contact, research) {
+  const connection = isWarmLead(contact) ? (contact.connection || "").trim() : "";
+  const ask = isWarmLead(contact) ? contact.ask : "";
+  const sections = [
+    connection && `Connection: ${connection.slice(0, 300)}`,
+    ask && `Ask: ${ask}`,
+    buildResearchNotes(research),
   ].filter(Boolean);
   return sections.join("\n\n").slice(0, 2000);
 }

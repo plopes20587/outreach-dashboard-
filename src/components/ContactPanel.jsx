@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
-import { buildResearchNotes, diffProfile } from "../lib/contact";
+import { ASK_OPTIONS, buildNotionNotes, diffProfile, isWarmLead } from "../lib/contact";
 import { researchErrorMessage } from "../lib/contacts";
 import Card from "./Card";
 import Field from "./Field";
@@ -112,11 +112,11 @@ export default function ContactPanel({
     setPushing(true);
     setNotion({ forPerson: personId, status: null });
     try {
-      // The research is composed into Notion's Notes property at push time, so
-      // the reasoning behind an outreach survives in the tracker instead of
-      // living only on this screen. Empty when nothing was researched, and the
-      // serverless function omits the property in that case.
-      await api.pushNotion({ ...contact, notes: buildResearchNotes(research) });
+      // The connection (warm leads) and the research are composed into Notion's
+      // Notes property at push time, so the reasoning behind an outreach survives
+      // in the tracker instead of living only on this screen. Empty when there is
+      // neither, and the serverless function omits the property in that case.
+      await api.pushNotion({ ...contact, notes: buildNotionNotes(contact, research) });
       setNotion({ forPerson: personId, status: "ok" });
     } catch (err) {
       console.error("pushNotion:", err.message);
@@ -277,6 +277,33 @@ export default function ContactPanel({
           </select>
         </Field>
       </div>
+
+      {isWarmLead(contact) && (
+        <Field label="How you know them">
+          <input
+            value={contact.connection}
+            onChange={(e) =>
+              setContact((c) => ({ ...c, connection: e.target.value }))
+            }
+            placeholder="Worked together on the Verizon Value portfolio"
+          />
+        </Field>
+      )}
+      {isWarmLead(contact) && (
+        <Field label="What you're asking for">
+          <select
+            value={contact.ask}
+            onChange={(e) =>
+              setContact((c) => ({ ...c, ask: e.target.value }))
+            }
+          >
+            <option value="">Select...</option>
+            {ASK_OPTIONS.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       <div className="divider" />
 
