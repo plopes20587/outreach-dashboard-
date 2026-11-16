@@ -318,7 +318,6 @@ export default function ContactPanel({
               >
                 <option value="">Select...</option>
                 <option>Hiring Manager</option>
-                <option>Boss Hunt</option>
                 <option>Recruiter</option>
                 <option>Referral</option>
                 <option>Informational</option>

@@ -6,13 +6,14 @@ import Button from "./Button";
 import PromptBox from "./PromptBox";
 
 // Suggest which Claude.ai reference template the outreach-composer skill should
-// lean on, based on contact type first, then lead temperature.
-function suggestTemplate(contact) {
-  if (contact.contactType === "Boss Hunt")     return "Boss Hunting Playbook";
+// lean on. Informational and warm leads are settled by who the person is. A hiring
+// manager splits on intent: with a posting in the message it is a direct ask for
+// that role (Boss Hunting Playbook), without one it is a no-pitch intro
+// (Cold Outreach Strategy).
+function suggestTemplate(contact, postingIsIn) {
   if (contact.contactType === "Informational") return "Informational Interview";
-  if (isWarmLead(contact)) {
-    return "Warm Outreach Strategy";
-  }
+  if (isWarmLead(contact)) return "Warm Outreach Strategy";
+  if (contact.contactType === "Hiring Manager" && postingIsIn) return "Boss Hunting Playbook";
   return "Cold Outreach Strategy";
 }
 
@@ -117,7 +118,7 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
   const instructionSection = [
     "## How to write it",
     "- Run my skills in order: humanizer, then outreach-composer, then stop-slop. Open the skill files each time.",
-    `- Use the ${suggestTemplate(contact)} reference template. This is the first message only, so no follow-up language.`,
+    `- Use the ${suggestTemplate(contact, aboutPosting)} reference template. This is the first message only, so no follow-up language.`,
     analysis && !aboutPosting &&
       "- There is no open role in this message. Do not mention a posting or apply for anything. Make one small, easy ask that matches what I wrote above.",
     analysis?.posting_type !== "freelance" && analysis?.job_title && aboutPosting &&

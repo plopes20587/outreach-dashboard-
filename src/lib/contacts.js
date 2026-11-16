@@ -40,7 +40,7 @@ export function classifyTitle(title = "") {
   if (designIC)                       return { score: 80,  contactType: "Referral" };
   if (recruiter)                      return { score: 70,  contactType: "Recruiter" };
   if (informational)                  return { score: 50,  contactType: "Informational" };
-  if (founder)                        return { score: 40,  contactType: "Boss Hunt" };
+  if (founder)                        return { score: 40,  contactType: "Hiring Manager" };
   return { score: 10, contactType: "Other" };
 }
 

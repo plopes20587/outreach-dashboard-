@@ -472,6 +472,8 @@ A single muted helper line below the buttons changes with context:
 
 **Draft outreach still does NOT call an LLM** (Hard Rule #9). It builds a prompt string and renders it in `PromptBox`. `buildOutreachPrompt(contact, analysis, research, analyzedPosting)` is a set of markdown-headed sections, each dropped when empty: Contact (authoritative fields plus the channel: email with a subject line when `contact.email` is set, otherwise a short LinkedIn message), Why I'm reaching out (the role or contract, and `strengths` as angles to lead with), Research, The posting (the full `analyzedPosting` text in `<posting>` tags, placed just before the instructions), and How to write it (the suggested reference template, be specific, source priority, never hedge).
 
+**Template routing.** `suggestTemplate(contact, postingIsIn)` picks the reference template. Informational gets Informational Interview; warm leads get Warm Outreach Strategy; a Hiring Manager with the posting in the message gets the Boss Hunting Playbook (a direct ask for that role); a Hiring Manager with no posting, and everything else, gets Cold Outreach Strategy (no pitch, no resume). There is no "Boss Hunt" contact type: the program treats it as a method, and a founder at a small company is simply the hiring manager.
+
 **The analysis verdict is not sent.** `summary`, `gaps`, `red_flags`, and `fit_score` are Pat's private judgment on whether to pursue; passing the summary made drafts generic and hedged. The posting text is what gives the message something specific to say, and `analyzedPosting` (not the live textarea) is used so the posting and the analysis always describe the same text.
 
 **The research block is labeled, and dropped rather than hedged.** It is introduced with its as-of
@@ -780,7 +782,7 @@ These helpers live in `src/lib/contacts.js` and are imported by `FindPeople.jsx`
 | Referral | 80 | Design IC titles (product designer, UX designer, etc.) -- excludes graphic/fashion/industrial/game |
 | Recruiter | 70 | Recruit/talent/sourcer titles -- excludes sales, finance, legal, ops recruiters |
 | Informational | 50 | Creative director/head of creative (flagged: confirm they sit in product design), product manager/lead/director/VP/CPO, design ops, UX research, service/content designer, design engineer |
-| Boss Hunt | 40 | Founder, co-founder, CEO -- fallback for small startups with no design leader |
+| Hiring Manager | 40 | Founder, co-founder, CEO -- at a small startup with no design leader, the founder is the hiring manager. "Boss Hunt" is no longer a contact type; it is a method (see Compose) |
 | Other | 10 | Everything else (CFO, CTO, VP Sales, marketing, engineering, ops, legal, etc.) and contacts with no title. **Dropped from results** (not design-relevant). |
 
 ```js
@@ -815,7 +817,7 @@ function classifyTitle(title = "") {
   if (designIC)                       return { score: 80,  contactType: "Referral" };
   if (recruiter)                      return { score: 70,  contactType: "Recruiter" };
   if (informational)                  return { score: 50,  contactType: "Informational" };
-  if (founder)                        return { score: 40,  contactType: "Boss Hunt" };
+  if (founder)                        return { score: 40,  contactType: "Hiring Manager" };
   return { score: 10, contactType: "Other" };
 }
 
@@ -866,7 +868,7 @@ LinkedIn results from `/api/search-linkedin` are normalized through the same `cl
 | "Program Director" | Other, score 10 -> dropped |
 | "Senior Director of Marketing" | Other, score 10 -> dropped |
 | "Sales Recruiter" | Other, score 10 -> dropped |
-| "CEO" | Boss Hunt, score 40 |
+| "CEO" | Hiring Manager, score 40 |
 | "Senior Technical Recruiter" | Recruiter, score 70 |
 | "Head of Design" | Hiring Manager, score 100 |
 | "Director of Product Design" | Hiring Manager, score 100 |
@@ -1004,7 +1006,7 @@ Database ID: `2f312b17-d357-8155-b06f-000b29a1c83f`
 | Location | Rich text | Optional |
 | Email | Email | Optional |
 | Linkedin | URL | Optional, lowercase 'k' |
-| Contact Type | Select | Hiring Manager, Boss Hunt, Recruiter, Referral, Informational, Freelance/Client |
+| Contact Type | Select | Hiring Manager, Recruiter, Referral, Informational, Freelance/Client |
 | Lead Type | Select | Cold, Warm-ish, Warm |
 | Notes | Rich text | Optional, research notes + company context + hook, composed at push time |
 | Status | Select | Did not send (default), Email Sent, Follow-up Sent, Responded, No response |
