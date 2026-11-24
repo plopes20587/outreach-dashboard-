@@ -635,7 +635,7 @@ This is the LinkedIn fallback when Hunter doesn't return useful results, and the
 
 **Request:** `{ contact: { name, company, title, location, email, linkedin, contactType, leadType, notes, status }, today: "YYYY-MM-DD" }`
 
-`today` is the browser's local date (`toLocaleDateString("en-CA")`). The function runs in UTC, so computing the date server side stamped an evening US push with tomorrow's date. The server validates it, falls back to UTC only when it is missing, and derives the follow-up date with date-only math (`addDays(today, 10)`).
+`today` is the browser's local date (`toLocaleDateString("en-CA")`). The function runs in UTC, so computing the date server side stamped an evening US push with tomorrow's date. The server validates it, falls back to UTC only when it is missing, and derives the follow-up date with date-only math (`addDays(today, 10)`). Warm and warm-ish contacts get one touch only, so no follow-up date is set for them.
 
 `notes` is composed by the frontend from the research output (`buildResearchNotes`), not stored on the contact record. It is sliced to 2000 characters server-side because Notion rejects a longer `rich_text` object outright rather than truncating it.
 
@@ -1011,7 +1011,7 @@ Database ID: `2f312b17-d357-8155-b06f-000b29a1c83f`
 | Notes | Rich text | Optional, research notes + company context + hook, composed at push time |
 | Status | Select | Did not send (default), Email Sent, Follow-up Sent, Responded, No response |
 | Email Sent | Date | Auto-set when status changes to Email Sent or Follow-up Sent |
-| Follow up date | Date | Auto-set to +10 days when Email Sent date is set |
+| Follow up date | Date | Auto-set to +10 days when Email Sent date is set, except for Warm and Warm-ish leads, which get one touch and no follow-up |
 
 ---
 
