@@ -40,6 +40,7 @@ export default async function handler(request) {
   const dateTriggered =
     contact.status === "Email Sent" || contact.status === "Follow-up Sent";
   const today = resolveToday(body.today);
+  const oneTouch = contact.leadType === "Warm" || contact.leadType === "Warm-ish";
 
   const properties = {
     "Contact Name": { title: [{ text: { content: contact.name } }] },
@@ -56,7 +57,8 @@ export default async function handler(request) {
     "Status": { status: { name: contact.status || "Did not send" } },
     ...(dateTriggered && {
       "Email Sent":     { date: { start: today } },
-      "Follow up date": { date: { start: addDays(today, 10) } },
+      // Warm and warm-ish contacts get one touch and no follow-up date.
+      ...(!oneTouch && { "Follow up date": { date: { start: addDays(today, 10) } } }),
     }),
   };
 
