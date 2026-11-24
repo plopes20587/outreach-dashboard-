@@ -131,6 +131,9 @@ function buildOutreachPrompt(contact, analysis, research, postingText) {
     "- Be specific: one concrete detail from the posting or the hook, and the overlap with one piece of my work. No generic praise, no performed admiration.",
     isWarmLead(contact) && contact.connection?.trim() &&
       "- This person already knows me. Open from how we know each other, in the same words I used above. Do not invent shared history, details, or a recent conversation beyond what I wrote.",
+    "- End on an easy next step: one ask they can answer in a single line, like a yes or no, or a choice between two options (for example 15 minutes next week, or email is easier). Keep the graceful exit.",
+    isWarmLead(contact) &&
+      "- If it is true, give them one small thing of value: a relevant link, a real congratulations, or a quick observation about their work. Skip it if nothing real fits. Never invent one.",
     "- Source priority: the contact fields, then the posting, then the research. The posting is first-party and current; the research may be out of date.",
     "- Never hedge. If you are not sure a detail is still current, leave it out rather than qualifying it.",
   ];
